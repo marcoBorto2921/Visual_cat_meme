@@ -1,0 +1,32 @@
+camera:
+  index: 0
+  width: 640
+  height: 480
+  fps: 30
+
+pose:
+  classifier: rule_based
+  ml_model_path: models/pose_classifier.joblib
+  visibility_threshold: 0.5
+  smoothing_window: 5
+
+meme:
+  backend: cataas
+  cache_ttl_seconds: 30
+  request_timeout_seconds: 3
+  giphy_api_key: ""
+
+display:
+  window_title: "CatPose Meme Machine"
+  meme_panel_width: 400
+  debug_mode: false
+  font_scale: 1.0
+
+pose_to_tags:
+  arms_up: ["happy cat", "excited cat", "jumping cat"]
+  arms_wide: ["big cat", "dramatic cat", "surprised cat"]
+  thinking: ["thinking cat", "serious cat", "smart cat"]
+  slouching: ["sleepy cat", "lazy cat", "tired cat"]
+  crossed_arms: ["grumpy cat", "mad cat", "annoyed cat"]
+  hands_on_hips: ["sassy cat", "boss cat", "confident cat"]
+  neutral: ["cat", "cute cat", "cat meme"]

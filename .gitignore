@@ -1,0 +1,10 @@
+.venv/
+.claude/
+*.pyc
+__pycache__/
+.env
+models/
+*.joblib
+screenshots/
+*.png
+*.jpg
