@@ -1,10 +1,10 @@
 .venv/
 .claude/
-*.pyc
 __pycache__/
+*.pyc
 .env
-models/
-*.joblib
+clip_index/embeddings.npy
+clip_index/filenames.json
+assets/cats/*
+!assets/cats/.gitkeep
 screenshots/
-*.png
-*.jpg

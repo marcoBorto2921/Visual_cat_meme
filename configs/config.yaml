@@ -5,28 +5,27 @@ camera:
   fps: 30
 
 pose:
-  classifier: rule_based
-  ml_model_path: models/pose_classifier.joblib
   visibility_threshold: 0.5
   smoothing_window: 5
 
-meme:
-  backend: cataas
-  cache_ttl_seconds: 30
-  request_timeout_seconds: 3
-  giphy_api_key: ""
+clip:
+  model_name: "openai/clip-vit-base-patch32"
+  index_dir: "clip_index"
+  cats_dir: "assets/cats"
+  top_k: 3
 
 display:
-  window_title: "CatPose Meme Machine"
-  meme_panel_width: 400
+  window_title: "CatPose CLIP"
+  cat_panel_width: 480
   debug_mode: false
   font_scale: 1.0
+  similarity_threshold: 0.15
 
-pose_to_tags:
-  arms_up: ["happy cat", "excited cat", "jumping cat"]
-  arms_wide: ["big cat", "dramatic cat", "surprised cat"]
-  thinking: ["thinking cat", "serious cat", "smart cat"]
-  slouching: ["sleepy cat", "lazy cat", "tired cat"]
-  crossed_arms: ["grumpy cat", "mad cat", "annoyed cat"]
-  hands_on_hips: ["sassy cat", "boss cat", "confident cat"]
-  neutral: ["cat", "cute cat", "cat meme"]
+pose_descriptions:
+  arms_up:       "a person with both arms raised above the head, excited"
+  arms_wide:     "a person with arms stretched wide open to the sides"
+  thinking:      "a person touching their face with one hand, thinking"
+  slouching:     "a person slouching forward with drooping shoulders, tired"
+  crossed_arms:  "a person with arms crossed on the chest, grumpy"
+  hands_on_hips: "a person with hands on hips, confident and sassy"
+  neutral:       "a person standing normally, calm and relaxed"

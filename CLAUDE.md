@@ -1,7 +1,9 @@
-# CLAUDE.md — CatPose Meme Machine
+# CLAUDE.md — CatPose CLIP
 
-> This file is the single source of truth for Claude Code.
-> Read it entirely before doing anything. Act as a senior ML engineer throughout.
+> Questo file è la single source of truth per Claude Code.
+> Leggilo interamente prima di fare qualsiasi cosa. Agisci come senior ML engineer.
+> Dopo ogni modifica rilevante: `git add -A && git commit -m "feat: <descrizione breve>"`.
+> Alla fine del setup: `git push`.
 
 ---
 
@@ -9,57 +11,64 @@
 
 | Field | Details |
 |-------|---------|
-| **Task** | Real-time pose detection via webcam → cat meme retrieval matching the detected pose |
-| **Metric** | Qualitative (correct pose label + relevant meme displayed in real-time) |
-| **Data** | Live webcam feed (no dataset — inference only at runtime) |
-| **Target** | 7 pose classes: `arms_up`, `arms_wide`, `thinking`, `slouching`, `crossed_arms`, `hands_on_hips`, `neutral` |
-| **Platform** | Local machine (no competition) |
+| **Task** | Real-time pose detection via webcam → image retrieval: mostra la foto di gatto più "simile" alla posa rilevata, usando embedding CLIP |
+| **Metric** | Qualitativa — cosine similarity tra embedding posa e embedding foto gatto |
+| **Data** | Live webcam feed + cartella locale `assets/cats/` con foto di gatti scelte dall'utente |
+| **Target** | Nessun label esplicito — retrieval puro via nearest neighbor nello spazio CLIP |
+| **Platform** | Local machine (nessuna competition) |
 | **URL** | N/A |
-| **Deadline** | No deadline |
-| **GPU Required** | No — MediaPipe runs efficiently on CPU |
-| **External Data** | Cat memes fetched live from internet APIs |
+| **Deadline** | Nessuna |
+| **GPU Required** | No — CLIP (ViT-B/32) gira su CPU per l'embedding index; l'inferenza real-time è leggera |
+| **External Data** | N/A |
 
-### Pose Classes
-- `arms_up` — both wrists raised above the head
-- `arms_wide` — both arms extended horizontally outward
-- `thinking` — one hand near the chin/cheek
-- `slouching` — shoulders significantly lower than nose level, forward lean
-- `crossed_arms` — wrists near the opposite elbows
-- `hands_on_hips` — wrists near the hip landmarks
-- `neutral` — no specific pose detected
+---
+
+## Idea Centrale
+
+L'utente inserisce nella cartella `assets/cats/` le foto di gatti che preferisce (meme, foto, qualsiasi cosa).
+A runtime, il sistema:
+1. Rileva i landmark corporei dell'utente via **MediaPipe Pose**
+2. Genera una **descrizione testuale** della posa rilevata (es. `"a person with arms raised above the head"`)
+3. Calcola l'**embedding CLIP** di quella descrizione
+4. Trova la **foto di gatto più vicina** nel CLIP embedding space (cosine similarity)
+5. Mostra la foto sul pannello destro della finestra OpenCV
+
+Non c'è training — è **zero-shot retrieval**. L'utente può aggiungere/rimuovere foto da `assets/cats/` e il sistema si aggiorna automaticamente al prossimo avvio (o premendo `i` per re-indicizzare a runtime).
 
 ---
 
 ## Repository Structure
 
 ```
-catpose-meme-machine/
+catpose-clip/
 ├── .claude/
-│   ├── CLAUDE.md          ← this file (never committed to GitHub)
+│   ├── CLAUDE.md          ← questo file (mai committato)
 │   └── settings.json      ← {"dangerouslySkipPermissions": true}
-├── .venv/                 ← virtual environment (never committed)
+├── .venv/                 ← virtual environment (mai committato)
+├── assets/
+│   └── cats/              ← l'utente inserisce qui le sue foto di gatti (JPG/PNG)
+│       └── .gitkeep       ← cartella tracciata ma vuota nel repo
 ├── src/
 │   ├── pose/
-│   │   ├── detector.py    ← MediaPipe wrapper, returns 33 landmarks
-│   │   └── classifier.py  ← rule-based + optional ML classifier
-│   ├── meme/
-│   │   ├── fetcher.py     ← abstract base + multiple backend implementations
-│   │   ├── cataas.py      ← CATAAS API backend (no key needed)
-│   │   ├── reddit.py      ← Reddit public JSON API backend
-│   │   └── giphy.py       ← Giphy API backend (requires free key)
+│   │   ├── __init__.py
+│   │   ├── detector.py    ← MediaPipe wrapper, ritorna 33 landmark
+│   │   └── describer.py   ← converte landmark → stringa testuale per CLIP
+│   ├── clip_index/
+│   │   ├── __init__.py
+│   │   ├── indexer.py     ← carica foto da assets/cats/, calcola embedding, salva index
+│   │   └── retriever.py   ← dato un query embedding, ritorna la foto più simile
 │   ├── display/
-│   │   └── renderer.py    ← OpenCV rendering: webcam feed + pose label + meme overlay
+│   │   ├── __init__.py
+│   │   └── renderer.py    ← OpenCV dual-panel: webcam sx, gatto dx
 │   └── utils/
-│       ├── cache.py       ← meme image cache (TTL-based, avoids hammering APIs)
+│       ├── __init__.py
 │       └── logger.py      ← structured logging
 ├── configs/
-│   └── config.yaml        ← ALL settings: camera index, pose thresholds, meme backend, display params
+│   └── config.yaml        ← tutti i parametri configurabili
 ├── scripts/
-│   └── collect_pose_data.py  ← optional: collect labeled pose samples for ML classifier training
-├── notebooks/
-│   └── 01_pose_analysis.py   ← visualize landmark distributions per pose class
-├── main.py                ← entry point: runs the full pipeline
-├── requirements.txt       ← all dependencies pinned
+│   └── build_index.py     ← script standalone per (ri)costruire l'index CLIP
+├── main.py                ← entry point
+├── requirements.txt
 ├── README.md
 ├── TECHNICAL_CHOICES.md
 ├── Makefile
@@ -72,9 +81,8 @@ catpose-meme-machine/
 
 ### ALWAYS do this first
 ```bash
-cd catpose-meme-machine
+cd catpose-clip
 
-# Create venv if it doesn't exist
 python -m venv .venv
 
 # Activate (Linux/macOS)
@@ -82,133 +90,101 @@ source .venv/bin/activate
 # Activate (Windows)
 # .venv\Scripts\activate
 
-# Verify correct interpreter
-which python  # must point to .venv/bin/python
+# Verifica che python punti al venv
+which python  # deve essere .venv/bin/python
 
-# Install dependencies
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-> ⚠️ Every pip install and every python command must run inside the venv.
-> Never install packages globally.
+> ⚠️ Ogni pip install e ogni python command devono girare dentro il venv. Mai installare globalmente.
 
 ---
 
 ## Technical Strategy
 
 ### Pose Detection
-Use **MediaPipe Pose** (mediapipe >= 0.10). It exposes 33 body landmarks, each with `x`, `y`, `z` (normalized) and `visibility`. Only use landmarks with `visibility > 0.5` in the classifier.
+**MediaPipe Pose** (mediapipe >= 0.10). 33 landmark, x/y/z normalizzati + visibility. Usa solo landmark con `visibility > 0.5`.
 
-Key landmark indices (memorize these):
-| Index | Name |
+Landmark chiave:
+| Index | Nome |
 |-------|------|
 | 0 | NOSE |
 | 11 | LEFT_SHOULDER |
 | 12 | RIGHT_SHOULDER |
-| 13 | LEFT_ELBOW |
-| 14 | RIGHT_ELBOW |
 | 15 | LEFT_WRIST |
 | 16 | RIGHT_WRIST |
 | 23 | LEFT_HIP |
 | 24 | RIGHT_HIP |
-| 25 | LEFT_KNEE |
-| 26 | RIGHT_KNEE |
 
-### Pose Classification — Two Approaches
+### Pose → Testo (describer.py)
 
-**Phase 1 (Baseline — implemented first): Rule-based classifier**
-Geometric rules on normalized landmark coordinates. Fast, zero training data needed, interpretable.
+Converti i landmark in una stringa leggibile da CLIP. Usa regole geometriche semplici per scegliere la descrizione più accurata. Esempi:
 
-Example rules:
-- `arms_up`: `wrist_y < shoulder_y - 0.15` for both wrists (y is inverted, 0=top)
-- `arms_wide`: `|wrist_x - shoulder_x| > 0.25` for both wrists and `|wrist_y - shoulder_y| < 0.1`
-- `thinking`: one wrist within `0.15` distance of the chin/cheek area
-- `slouching`: `shoulder_y > nose_y + 0.35` (shoulders far below nose in frame)
-- `crossed_arms`: left wrist x > right shoulder x AND right wrist x < left shoulder x
-- `hands_on_hips`: both wrists within `0.1` of their same-side hip landmark
-- `neutral`: fallback if no rule matches
-
-**Phase 2 (Optional ML upgrade): scikit-learn classifier**
-Collect ~50-100 samples per class with `scripts/collect_pose_data.py`, then train an MLP or SVM on the 33×3 flattened landmark vector. Serialize with joblib. Switch via `config.yaml: classifier: type: ml`.
-
-### Meme Retrieval
-
-Three backends, selectable in `config.yaml: meme: backend`:
-
-| Backend | Key needed | Notes |
-|---------|-----------|-------|
-| `cataas` | No | https://cataas.com/cat/{tag} — default, always works |
-| `reddit` | No | r/catmemes public JSON — rate limited, add delay |
-| `giphy` | Yes (free) | Best tag matching, requires `GIPHY_API_KEY` env var |
-
-Pose → tag mapping (in `configs/config.yaml`):
-```yaml
-pose_to_tags:
-  arms_up: ["happy cat", "excited cat", "jumping cat"]
-  arms_wide: ["big cat", "dramatic cat", "surprised cat"]
-  thinking: ["thinking cat", "serious cat", "smart cat"]
-  slouching: ["sleepy cat", "lazy cat", "tired cat"]
-  crossed_arms: ["grumpy cat", "mad cat", "annoyed cat"]
-  hands_on_hips: ["sassy cat", "boss cat", "confident cat"]
-  neutral: ["cat", "cute cat", "cat meme"]
+```python
+POSE_DESCRIPTIONS = {
+    "arms_up":      "a person with both arms raised above the head, excited",
+    "arms_wide":    "a person with arms stretched wide open to the sides",
+    "thinking":     "a person touching their face with one hand, thinking",
+    "slouching":    "a person slouching forward with drooping shoulders, tired",
+    "crossed_arms": "a person with arms crossed on the chest, grumpy",
+    "hands_on_hips":"a person with hands on hips, confident and sassy",
+    "neutral":      "a person standing normally, calm and relaxed",
+}
 ```
 
-### Caching Strategy
-Cache fetched meme images in memory (dict: `pose_label → PIL.Image`). Refresh TTL: 30 seconds (configurable). This prevents hammering the API on every frame while keeping memes fresh enough.
+La regola di classificazione geometrica rimane semplice (come nel progetto originale) — serve solo per scegliere quale stringa mandare a CLIP, non deve essere perfetta perché CLIP gestisce la vaghezza semantica.
+
+### CLIP Embedding Index
+
+Usa **openai/clip-vit-base-patch32** via `transformers` (HuggingFace). Non serve PyTorch GPU.
+
+**Build index** (fatto una volta, poi cached):
+1. Carica tutte le immagini da `assets/cats/`
+2. Per ognuna, calcola l'embedding CLIP immagine → vettore float32 di dim 512
+3. Normalizza L2
+4. Salva in `clip_index/embeddings.npy` e `clip_index/filenames.json`
+
+**Retrieval** (real-time, ogni frame o ogni N frame):
+1. Prendi la descrizione testuale della posa corrente
+2. Calcola embedding CLIP del testo → vettore float32 dim 512, normalizzato L2
+3. Cosine similarity = dot product (perché già normalizzati)
+4. Ritorna il filename con similarity più alta
+
+**Performance**: l'embedding del testo su CPU è ~5-10ms. Nessun impatto sull'FPS.
 
 ### Display Layout (OpenCV)
-Split the window into two panels side by side:
-- **Left panel**: webcam feed with MediaPipe skeleton overlay + pose label text
-- **Right panel**: current cat meme (resized to fit panel, maintaining aspect ratio)
-- **Bottom bar**: pose confidence / active rule name (debug mode, toggleable with `d` key)
+- **Pannello sinistro**: feed webcam con skeleton MediaPipe + label posa corrente + similarity score
+- **Pannello destro**: foto del gatto più simile, resizata mantenendo aspect ratio
+- **Debug overlay** (tasto `d`): mostra top-3 match con similarity score
 
-Target FPS: ≥ 20fps. If below threshold, reduce meme panel resolution or skip meme fetch frames.
-
-### Key Technical Choices
-- MediaPipe over OpenPose/MMPose: runs on CPU, no CUDA needed, single pip install
-- CATAAS as default backend: zero config, works immediately, good for demo
-- Rule-based classifier first: instant feedback loop, no data collection required
-- TTL cache for memes: avoids rate limits, keeps real-time feel
-- OpenCV for display: already a dependency of MediaPipe, no extra install
+### Caching
+- Il testo embedding viene ricalcolato solo quando cambia la posa (non ogni frame)
+- La foto risultante viene mantenuta finché la posa non cambia o non si preme `r`
+- L'index viene costruito una volta e caricato da file ad ogni avvio
 
 ---
 
-## Workflow — Follow This Order
+## Workflow — Segui Questo Ordine
 
-1. **Setup** — create venv, install requirements
-2. **Smoke test camera** — verify webcam opens with OpenCV (`cv2.VideoCapture(0)`)
-3. **Pose detection** — implement `src/pose/detector.py`, display landmarks on webcam feed
-4. **Rule classifier** — implement `src/pose/classifier.py` with all 7 rules
-5. **Meme fetcher** — implement CATAAS backend first (`src/meme/cataas.py`)
-6. **Renderer** — implement `src/display/renderer.py` with dual-panel layout
-7. **Wire up** — connect everything in `main.py`
-8. **Run** — `python main.py` — verify end-to-end
-9. **Tune** — adjust thresholds in `config.yaml` until all poses trigger correctly
-10. **Optional** — add Reddit/Giphy backends, then ML classifier upgrade
+1. **Setup** — crea venv, installa requirements
+2. **Crea struttura** — tutte le cartelle e file elencati in "Files to Create"
+3. **Implementa detector.py** — MediaPipe wrapper
+4. **Implementa describer.py** — regole geometriche → stringa testuale
+5. **Implementa indexer.py** — carica foto, calcola embedding CLIP, salva index
+6. **Implementa retriever.py** — cosine similarity, ritorna path foto
+7. **Implementa renderer.py** — dual-panel OpenCV
+8. **Implementa main.py** — wiring completo
+9. **Implementa scripts/build_index.py** — script standalone per build index
+10. **Smoke test** — con 2-3 foto di placeholder in `assets/cats/`, verifica che il pipeline giri
+11. **Commit e push** — `git add -A && git commit -m "feat: initial working pipeline" && git push`
 
----
-
-## Code Quality Standards
-
-Act as a senior ML engineer. Every file must follow these standards:
-
-- **Type hints** on all functions and class methods
-- **Docstrings** on all classes and non-trivial functions (Google style)
-- **PEP 8** — enforced via ruff
-- **No hardcoded values** — everything in `configs/config.yaml`
-- **Modular code** — one responsibility per file, no 500-line monoliths
-- **Requirements** — pin every dependency with exact version in `requirements.txt`
-- **Graceful error handling** — if meme API fails, display a fallback placeholder image (never crash)
-- **No global state** — pass config explicitly, use dependency injection
+> ⚠️ La cartella `assets/cats/` deve essere creata e tracciata con `.gitkeep` ma VUOTA — l'utente la riempirà con le sue foto. Non aggiungere foto placeholder nel repo.
 
 ---
 
-## Config Convention
+## Config (configs/config.yaml)
 
-All settings live in `configs/config.yaml`. `main.py` loads it with PyYAML and passes the config dict down.
-
-Example structure:
 ```yaml
 camera:
   index: 0
@@ -217,120 +193,133 @@ camera:
   fps: 30
 
 pose:
-  classifier: rule_based   # or: ml
-  ml_model_path: models/pose_classifier.joblib
   visibility_threshold: 0.5
-  smoothing_window: 5       # frames to smooth pose label over
+  smoothing_window: 5        # frame di smoothing per evitare flickering del label
 
-meme:
-  backend: cataas           # or: reddit, giphy
-  cache_ttl_seconds: 30
-  request_timeout_seconds: 3
-  giphy_api_key: ""         # override with GIPHY_API_KEY env var
+clip:
+  model_name: "openai/clip-vit-base-patch32"
+  index_dir: "clip_index"    # dove salvare embeddings.npy e filenames.json
+  cats_dir: "assets/cats"    # dove l'utente mette le sue foto
+  top_k: 3                   # quante foto mostrare in debug mode
 
 display:
-  window_title: "CatPose Meme Machine"
-  meme_panel_width: 400
+  window_title: "CatPose CLIP"
+  cat_panel_width: 480
   debug_mode: false
   font_scale: 1.0
+  similarity_threshold: 0.15  # sotto questa soglia mostra "no match" invece di una foto
 
-pose_to_tags:
-  arms_up: ["happy cat", "excited cat", "jumping cat"]
-  arms_wide: ["big cat", "dramatic cat", "surprised cat"]
-  thinking: ["thinking cat", "serious cat", "smart cat"]
-  slouching: ["sleepy cat", "lazy cat", "tired cat"]
-  crossed_arms: ["grumpy cat", "mad cat", "annoyed cat"]
-  hands_on_hips: ["sassy cat", "boss cat", "confident cat"]
-  neutral: ["cat", "cute cat", "cat meme"]
+pose_descriptions:
+  arms_up:       "a person with both arms raised above the head, excited"
+  arms_wide:     "a person with arms stretched wide open to the sides"
+  thinking:      "a person touching their face with one hand, thinking"
+  slouching:     "a person slouching forward with drooping shoulders, tired"
+  crossed_arms:  "a person with arms crossed on the chest, grumpy"
+  hands_on_hips: "a person with hands on hips, confident and sassy"
+  neutral:       "a person standing normally, calm and relaxed"
 ```
+
+---
+
+## Keyboard Shortcuts (OpenCV window)
+
+| Tasto | Azione |
+|-------|--------|
+| `q` | Quit |
+| `d` | Toggle debug overlay (mostra top-3 match con score) |
+| `r` | Forza re-retrieval (ignora cache) |
+| `i` | Re-indicizza `assets/cats/` a runtime (utile dopo aver aggiunto foto) |
+| `s` | Salva screenshot in `screenshots/` |
+
+---
+
+## Code Quality Standards
+
+- **Type hints** su tutte le funzioni e metodi
+- **Docstring Google-style** su tutte le classi e funzioni non-banali
+- **PEP 8** — enforced via ruff
+- **Zero valori hardcoded** — tutto in `configs/config.yaml`
+- **Un file, una responsabilità** — no monoliti da 500 righe
+- **Requirements** — ogni dipendenza pinnata con versione esatta
+- **Graceful error handling** — se `assets/cats/` è vuota, mostra un messaggio chiaro e continua senza crash
+- **Nessuno stato globale** — passa config esplicitamente
 
 ---
 
 ## Git Conventions
 
 - Branch: `main`
-- Commits: `feat: ...` | `fix: ...` | `exp: ...` | `docs: ...`
-- Never commit: `.venv/`, `.claude/`, API keys, `models/`
-- Tag stable versions: `git tag v1.0`
+- Commit dopo ogni step significativo: `feat: ...` | `fix: ...` | `docs: ...`
+- Push finale dopo il setup completo
+- Mai committare: `.venv/`, `.claude/`, `clip_index/embeddings.npy`, `clip_index/filenames.json`, foto in `assets/cats/`
 
-### .gitignore must include:
+### .gitignore deve includere:
 ```
 .venv/
 .claude/
-*.pyc
 __pycache__/
+*.pyc
 .env
-models/
-*.joblib
+clip_index/embeddings.npy
+clip_index/filenames.json
+assets/cats/*
+!assets/cats/.gitkeep
+screenshots/
 ```
-
----
-
-## Runtime Controls (keyboard shortcuts in OpenCV window)
-
-| Key | Action |
-|-----|--------|
-| `q` | Quit |
-| `d` | Toggle debug overlay |
-| `r` | Force refresh meme (ignores cache TTL) |
-| `s` | Save screenshot to `screenshots/` |
-| `1/2/3` | Switch meme backend (cataas/reddit/giphy) at runtime |
 
 ---
 
 ## Files to Create
 
-Claude Code must create ALL of the following before considering setup complete:
+Claude Code deve creare TUTTI i seguenti file prima di considerare il setup completo:
 
-- [ ] `requirements.txt` — pinned deps: mediapipe, opencv-python, requests, Pillow, PyYAML, numpy, ruff
-- [ ] `configs/config.yaml` — full config as shown above
+- [ ] `requirements.txt` — mediapipe, opencv-python, transformers, torch (cpu), Pillow, PyYAML, numpy, ruff
+- [ ] `configs/config.yaml` — come sopra
+- [ ] `assets/cats/.gitkeep` — cartella vuota tracciata
+- [ ] `clip_index/.gitkeep` — cartella vuota per l'index
+- [ ] `screenshots/.gitkeep`
 - [ ] `src/__init__.py`
 - [ ] `src/pose/__init__.py`
-- [ ] `src/pose/detector.py` — MediaPipe wrapper class
-- [ ] `src/pose/classifier.py` — RuleBasedClassifier + optional MLClassifier
-- [ ] `src/meme/__init__.py`
-- [ ] `src/meme/fetcher.py` — abstract base class `MemeFetcher`
-- [ ] `src/meme/cataas.py` — CATAAS implementation
-- [ ] `src/meme/reddit.py` — Reddit implementation
-- [ ] `src/meme/giphy.py` — Giphy implementation
+- [ ] `src/pose/detector.py` — MediaPipe wrapper
+- [ ] `src/pose/describer.py` — landmark → stringa testuale
+- [ ] `src/clip_index/__init__.py`
+- [ ] `src/clip_index/indexer.py` — build e salva embedding index
+- [ ] `src/clip_index/retriever.py` — cosine similarity retrieval
 - [ ] `src/display/__init__.py`
-- [ ] `src/display/renderer.py` — OpenCV dual-panel renderer
+- [ ] `src/display/renderer.py` — OpenCV dual-panel
 - [ ] `src/utils/__init__.py`
-- [ ] `src/utils/cache.py` — TTL cache class
 - [ ] `src/utils/logger.py` — logging setup
-- [ ] `main.py` — entry point, wires everything together
-- [ ] `scripts/collect_pose_data.py` — pose data collection for ML upgrade
-- [ ] `notebooks/01_pose_analysis.py` — landmark visualization
+- [ ] `scripts/build_index.py` — standalone script per (ri)costruire index
+- [ ] `main.py` — entry point, wiring completo
 - [ ] `README.md`
 - [ ] `TECHNICAL_CHOICES.md`
 - [ ] `Makefile`
 - [ ] `.gitignore`
-- [ ] `screenshots/.gitkeep`
-- [ ] `models/.gitkeep`
 
 ---
 
 ## Code Review Checklist
 
-After writing all files, Claude Code must verify:
+Dopo aver scritto tutti i file, Claude Code deve verificare:
 
-- [ ] `python main.py` runs without errors
-- [ ] Webcam opens correctly (test with `cv2.VideoCapture(config['camera']['index'])`)
-- [ ] All 7 pose classes trigger correctly during manual testing
-- [ ] Meme fetches successfully from CATAAS backend
-- [ ] App does NOT crash if meme API returns an error (fallback image shown)
-- [ ] All config values are read from `configs/config.yaml`, none hardcoded
-- [ ] All functions have type hints and docstrings
-- [ ] No import errors (all packages in requirements.txt)
-- [ ] Keyboard shortcuts `q`, `d`, `r` work correctly
-- [ ] FPS stays ≥ 15fps on CPU (measure with `cv2.getTickFrequency()`)
+- [ ] `python scripts/build_index.py` gira senza errori (anche con cartella vuota — deve stampare un warning chiaro)
+- [ ] `python main.py` si avvia e apre la webcam
+- [ ] Con almeno 1 foto in `assets/cats/`, il retrieval funziona e mostra la foto
+- [ ] Cambiando posa, la foto cambia
+- [ ] Se `assets/cats/` è vuota, il programma non crasha — mostra un messaggio e il solo feed webcam
+- [ ] Tutti i valori letti da `configs/config.yaml`, nessuno hardcoded
+- [ ] Tutte le funzioni hanno type hints e docstring
+- [ ] Nessun import error (tutti i package in requirements.txt)
+- [ ] I tasti `q`, `d`, `r`, `i`, `s` funzionano
+- [ ] FPS ≥ 15 su CPU (misura con `cv2.getTickFrequency()`)
+- [ ] `git log` mostra commit per ogni step significativo
+- [ ] `git push` completato con successo
 
 ---
 
-## Future Extensions (do NOT implement now, just keep in mind)
+## Future Extensions (non implementare ora)
 
-- **ML classifier upgrade**: train SVM/MLP on collected pose samples (Phase 2)
-- **Sequence poses**: detect motion patterns over time (e.g., waving = transition arms_wide → arms_up)
-- **Multi-person**: extend to multiple people in frame
-- **Web UI**: replace OpenCV window with a Flask/FastAPI + WebSocket frontend
-- **Sound effects**: play a cat sound when pose changes
+- **ML classifier personalizzato**: raccogliere pose sample con `scripts/collect_pose_data.py` e addestrare SVM/MLP per migliorare la classificazione geometrica
+- **Top-K display**: mostrare le top-3 foto più simili in una griglia invece di una sola
+- **Similarity heatmap**: visualizzare quanto ogni foto si avvicina alla posa corrente
+- **Aggiornamento index live**: watch sulla cartella `assets/cats/` con watchdog per re-indicizzare automaticamente quando si aggiungono foto
