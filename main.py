@@ -13,7 +13,6 @@ from __future__ import annotations
 import sys
 import time
 from collections import deque
-from pathlib import Path
 
 import cv2
 import yaml
