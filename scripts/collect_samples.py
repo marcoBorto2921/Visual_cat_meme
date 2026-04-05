@@ -236,8 +236,9 @@ def main() -> None:
 
                     if collected >= samples_per_pose:
                         sampling = False
+                        skip = True
                         counts[label] = counts.get(label, 0) + collected
-                        print(f"  [{label}] Campionati {collected} frame. Passa al prossimo!")
+                        print(f"  [{label}] Campionati {collected} frame. Prossimo gatto...")
 
                 composed = render_collection_ui(
                     frame, cat_panel, label, collected, samples_per_pose,
