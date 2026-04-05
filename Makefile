@@ -1,7 +1,10 @@
-.PHONY: index run lint
+.PHONY: collect train run lint
 
-index:
-	python scripts/build_index.py
+collect:
+	python scripts/collect_samples.py
+
+train:
+	python scripts/train_classifier.py
 
 run:
 	python main.py
