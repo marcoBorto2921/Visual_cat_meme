@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import csv
 import pickle
 import sys
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 from sklearn.metrics import classification_report, accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
@@ -47,13 +47,17 @@ def train(config: dict) -> None:
         )
         sys.exit(1)
 
-    df = pd.read_csv(samples_path)
-    if df.empty:
+    with open(samples_path, newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    if not rows:
         logger.error("Samples file is empty. Collect training data first.")
         sys.exit(1)
 
-    labels = df["label"].values
-    features = df.drop(columns=["label"]).values.astype(np.float32)
+    labels = np.array([r["label"] for r in rows])
+    feature_cols = [k for k in rows[0] if k != "label"]
+    features = np.array([[float(r[c]) for c in feature_cols] for r in rows], dtype=np.float32)
 
     unique_classes = np.unique(labels)
     if len(unique_classes) < 2:
