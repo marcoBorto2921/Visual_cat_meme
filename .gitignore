@@ -3,9 +3,9 @@
 __pycache__/
 *.pyc
 .env
-clip_index/embeddings.npy
-clip_index/filenames.json
+data/samples.csv
+data/*.csv
+models/*.pkl
 assets/cats/*
 !assets/cats/.gitkeep
 screenshots/
-models/

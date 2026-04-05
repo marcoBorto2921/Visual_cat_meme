@@ -1,10 +1,11 @@
-"""CatPose CLIP — entry point.
+"""CatPose — entry point.
+
+Real-time pose classification via webcam: imita un gatto e vedi la sua foto.
 
 Keyboard shortcuts:
   q — quit
-  d — toggle debug overlay
-  r — force re-retrieval (clear cache)
-  i — re-index assets/cats/ at runtime
+  d — toggle debug overlay (top-3 predictions with confidence)
+  r — reset smoothing window
   s — save screenshot
 """
 
@@ -17,10 +18,9 @@ from collections import deque
 import cv2
 import yaml
 
-from src.clip_index.indexer import CLIPIndexer
-from src.clip_index.retriever import CLIPRetriever
+from src.classifier.features import extract_features
+from src.classifier.predictor import Predictor
 from src.display.renderer import Renderer
-from src.pose.describer import classify_pose
 from src.pose.detector import PoseDetector
 from src.utils.logger import get_logger
 
@@ -41,42 +41,46 @@ def load_config(path: str = "configs/config.yaml") -> dict:
 
 
 def main() -> None:
-    """Run the CatPose CLIP pipeline."""
+    """Run the CatPose real-time pipeline."""
     config = load_config()
     cam_cfg = config["camera"]
     pose_cfg = config["pose"]
-    clip_cfg = config["clip"]
+    clf_cfg = config["classifier"]
     disp_cfg = config["display"]
-    pose_descs: dict[str, str] = config["pose_descriptions"]
+    paths_cfg = config["paths"]
 
-    # --- Init components ---
+    # --- Init detector ---
     detector = PoseDetector(visibility_threshold=pose_cfg["visibility_threshold"])
 
-    indexer = CLIPIndexer(
-        model_name=clip_cfg["model_name"],
-        cats_dir=clip_cfg["cats_dir"],
-        index_dir=clip_cfg["index_dir"],
-    )
-    retriever = CLIPRetriever(
-        model_name=clip_cfg["model_name"],
-        index_dir=clip_cfg["index_dir"],
-        top_k=clip_cfg["top_k"],
-    )
+    # --- Init predictor (exits with instructions if model missing) ---
+    try:
+        predictor = Predictor(
+            classifier_path=paths_cfg["classifier"],
+            label_encoder_path=paths_cfg["label_encoder"],
+        )
+    except FileNotFoundError as exc:
+        logger.error(
+            "Modello non trovato.\n%s\n\n"
+            "Segui questi passi:\n"
+            "  1. python scripts/collect_samples.py\n"
+            "  2. python scripts/train_classifier.py\n"
+            "  3. python main.py",
+            exc,
+        )
+        sys.exit(1)
 
-    # Try loading pre-built index; build if absent
-    if not retriever.load_index():
-        logger.info("No pre-built index found — building now...")
-        emb, paths = indexer.build_and_save()
-        retriever.load_from_arrays(emb, paths)
-
+    # --- Init renderer ---
     renderer = Renderer(
         window_title=disp_cfg["window_title"],
         cat_panel_width=disp_cfg["cat_panel_width"],
         font_scale=disp_cfg["font_scale"],
         debug_mode=disp_cfg["debug_mode"],
-        similarity_threshold=disp_cfg["similarity_threshold"],
+        confidence_threshold=clf_cfg["confidence_threshold"],
+        cats_dir=config["data_collection"]["cats_dir"],
+        screenshots_dir=paths_cfg["screenshots"],
     )
 
+    # --- Open webcam ---
     cap = cv2.VideoCapture(cam_cfg["index"])
     if not cap.isOpened():
         logger.error("Cannot open camera index %d", cam_cfg["index"])
@@ -85,15 +89,12 @@ def main() -> None:
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_cfg["height"])
     cap.set(cv2.CAP_PROP_FPS, cam_cfg["fps"])
 
-    # State
-    smoothing: deque[str] = deque(maxlen=pose_cfg["smoothing_window"])
-    current_cat: str | None = None
-    current_score: float = 0.0
-    top_k_results: list[tuple[str, float]] = []
-    prev_label: str = ""
-    force_retrieval: bool = False
+    # --- State ---
+    smoothing: deque[str] = deque(maxlen=clf_cfg["smoothing_window"])
+    current_label: str | None = None
+    current_confidence: float = 0.0
+    current_top3: list[tuple[str, float]] = []
 
-    # FPS tracking
     fps_counter: deque[float] = deque(maxlen=30)
     prev_time = time.time()
 
@@ -113,36 +114,36 @@ def main() -> None:
         prev_time = now
         fps = sum(fps_counter) / len(fps_counter)
 
-        # Pose detection
+        # Pose detection + feature extraction
         landmarks = detector.detect(frame)
         if landmarks:
-            label, description = classify_pose(landmarks, pose_descs)
-        else:
-            label = "neutral"
-            description = pose_descs.get("neutral", "a person standing normally")
+            features = extract_features(landmarks, pose_cfg["visibility_threshold"])
+            label, confidence, top3 = predictor.predict(features)
+            smoothing.append(label)
+            stable_label = max(set(smoothing), key=list(smoothing).count)
 
-        # Smoothing
-        smoothing.append(label)
-        stable_label = max(set(smoothing), key=list(smoothing).count)
-
-        # Retrieval (only when pose changes or forced)
-        if stable_label != prev_label or force_retrieval:
-            top_k_results = retriever.retrieve(description)
-            if top_k_results:
-                current_cat, current_score = top_k_results[0]
+            if confidence >= clf_cfg["confidence_threshold"]:
+                current_label = stable_label
+                current_confidence = confidence
+                current_top3 = top3
             else:
-                current_cat, current_score = None, 0.0
-            prev_label = stable_label
-            force_retrieval = False
+                current_label = None
+                current_confidence = confidence
+                current_top3 = top3
+        else:
+            # No pose detected — clear smoothing, show "?"
+            smoothing.clear()
+            current_label = None
+            current_confidence = 0.0
+            current_top3 = []
 
         # Render
         composed = renderer.render(
             frame_bgr=frame,
-            pose_label=stable_label,
-            score=current_score,
-            cat_path=current_cat,
+            pose_label=current_label,
+            confidence=current_confidence,
             fps=fps,
-            top_k_results=top_k_results,
+            top3=current_top3,
         )
 
         # Keyboard input
@@ -153,14 +154,8 @@ def main() -> None:
             renderer.debug_mode = not renderer.debug_mode
             logger.info("Debug mode: %s", renderer.debug_mode)
         elif key == ord("r"):
-            force_retrieval = True
-            logger.info("Forced re-retrieval")
-        elif key == ord("i"):
-            logger.info("Re-indexing assets/cats/ ...")
-            emb, paths = indexer.build_and_save()
-            retriever.load_from_arrays(emb, paths)
-            force_retrieval = True
-            logger.info("Re-index complete: %d images", len(paths))
+            smoothing.clear()
+            logger.info("Smoothing window reset")
         elif key == ord("s"):
             renderer.save_screenshot(composed)
 

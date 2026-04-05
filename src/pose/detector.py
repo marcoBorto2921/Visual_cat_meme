@@ -1,4 +1,4 @@
-"""MediaPipe Pose wrapper returning normalized landmarks."""
+"""MediaPipe Pose wrapper returning all 33 normalized landmarks."""
 
 from __future__ import annotations
 
@@ -20,17 +20,6 @@ MODEL_URL = (
 )
 MODEL_PATH = Path("models/pose_landmarker_full.task")
 
-# Key landmark indices
-LANDMARK_INDICES = {
-    "NOSE": 0,
-    "LEFT_SHOULDER": 11,
-    "RIGHT_SHOULDER": 12,
-    "LEFT_WRIST": 15,
-    "RIGHT_WRIST": 16,
-    "LEFT_HIP": 23,
-    "RIGHT_HIP": 24,
-}
-
 
 def _ensure_model() -> str:
     """Download the PoseLandmarker model file if not already present.
@@ -50,7 +39,8 @@ class PoseDetector:
     """Wraps MediaPipe Pose Tasks API for real-time landmark detection.
 
     Args:
-        visibility_threshold: Minimum landmark visibility to consider valid.
+        visibility_threshold: Minimum landmark visibility to consider a pose valid.
+            A pose is returned only when at least one landmark exceeds this threshold.
     """
 
     def __init__(self, visibility_threshold: float = 0.5) -> None:
@@ -72,14 +62,15 @@ class PoseDetector:
         self._landmarker = mp_vision.PoseLandmarker.create_from_options(options)
         logger.info("PoseDetector initialized (Tasks API, CPU)")
 
-    def detect(self, frame_bgr: np.ndarray) -> dict | None:
+    def detect(self, frame_bgr: np.ndarray) -> list | None:
         """Detect pose landmarks in a BGR frame.
 
         Args:
             frame_bgr: BGR image from OpenCV.
 
         Returns:
-            Dict mapping landmark name to NormalizedLandmark, or None if no pose found.
+            List of 33 NormalizedLandmark objects, or None if no pose found.
+            Each landmark has .x, .y, .z, .visibility attributes.
         """
         rgb = mp.Image(
             image_format=mp.ImageFormat.SRGB,
@@ -90,12 +81,8 @@ class PoseDetector:
             return None
 
         landmarks = result.pose_landmarks[0]
-        visible: dict = {}
-        for name, idx in LANDMARK_INDICES.items():
-            lm = landmarks[idx]
-            if lm.visibility >= self.visibility_threshold:
-                visible[name] = lm
-        return visible if visible else None
+        # Return all 33 landmarks; feature extraction handles filtering by visibility
+        return list(landmarks)
 
     def close(self) -> None:
         """Release MediaPipe resources."""

@@ -6,26 +6,34 @@ camera:
 
 pose:
   visibility_threshold: 0.5
-  smoothing_window: 5
+  model_path: null  # null = scarica automaticamente MediaPipe
 
-clip:
-  model_name: "openai/clip-vit-base-patch32"
-  index_dir: "clip_index"
+classifier:
+  model: "svm"             # "svm" o "mlp"
+  confidence_threshold: 0.4
+  smoothing_window: 7      # frame per il majority vote
+  svm:
+    C: 10.0
+    kernel: "rbf"
+    gamma: "scale"
+    probability: true
+  mlp:
+    hidden_layer_sizes: [128, 64]
+    max_iter: 1000
+    random_state: 42
+
+data_collection:
+  samples_per_pose: 30     # frame campionati per ogni posa
   cats_dir: "assets/cats"
-  top_k: 3
+  output_file: "data/samples.csv"
 
 display:
-  window_title: "CatPose CLIP"
+  window_title: "CatPose"
   cat_panel_width: 480
   debug_mode: false
   font_scale: 1.0
-  similarity_threshold: 0.15
 
-pose_descriptions:
-  arms_up:       "a person with both arms raised above the head, excited"
-  arms_wide:     "a person with arms stretched wide open to the sides"
-  thinking:      "a person touching their face with one hand, thinking"
-  slouching:     "a person slouching forward with drooping shoulders, tired"
-  crossed_arms:  "a person with arms crossed on the chest, grumpy"
-  hands_on_hips: "a person with hands on hips, confident and sassy"
-  neutral:       "a person standing normally, calm and relaxed"
+paths:
+  classifier: "models/classifier.pkl"
+  label_encoder: "models/label_encoder.pkl"
+  screenshots: "screenshots"

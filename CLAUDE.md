@@ -1,9 +1,9 @@
-# CLAUDE.md — CatPose CLIP
+# CLAUDE.md — CatPose Classifier
 
 > Questo file è la single source of truth per Claude Code.
 > Leggilo interamente prima di fare qualsiasi cosa. Agisci come senior ML engineer.
 > Dopo ogni modifica rilevante: `git add -A && git commit -m "feat: <descrizione breve>"`.
-> Alla fine del setup: `git push`.
+> Alla fine di ogni sessione: `git push`. Non chiedere conferme — esegui direttamente.
 
 ---
 
@@ -11,63 +11,89 @@
 
 | Field | Details |
 |-------|---------|
-| **Task** | Real-time pose detection via webcam → image retrieval: mostra la foto di gatto più "simile" alla posa rilevata, usando embedding CLIP |
-| **Metric** | Qualitativa — cosine similarity tra embedding posa e embedding foto gatto |
-| **Data** | Live webcam feed + cartella locale `assets/cats/` con foto di gatti scelte dall'utente |
-| **Target** | Nessun label esplicito — retrieval puro via nearest neighbor nello spazio CLIP |
+| **Task** | Real-time pose classification via webcam → mostra la foto di gatto che l'utente sta imitando |
+| **Metric** | Qualitativa — accuracy su validation set + confidence score a runtime |
+| **Data** | Live webcam feed + cartella `assets/cats/` con foto di gatti scelte dall'utente (una per classe) |
+| **Target** | Classificazione multiclasse: ogni classe = una foto di gatto specifica |
 | **Platform** | Local machine (nessuna competition) |
 | **URL** | N/A |
 | **Deadline** | Nessuna |
-| **GPU Required** | No — CLIP (ViT-B/32) gira su CPU per l'embedding index; l'inferenza real-time è leggera |
+| **GPU Required** | No — SVM/MLP su landmark 2D, tutto su CPU |
 | **External Data** | N/A |
 
 ---
 
 ## Idea Centrale
 
-L'utente inserisce nella cartella `assets/cats/` le foto di gatti che preferisce (meme, foto, qualsiasi cosa).
-A runtime, il sistema:
-1. Rileva i landmark corporei dell'utente via **MediaPipe Pose**
-2. Genera una **descrizione testuale** della posa rilevata (es. `"a person with arms raised above the head"`)
-3. Calcola l'**embedding CLIP** di quella descrizione
-4. Trova la **foto di gatto più vicina** nel CLIP embedding space (cosine similarity)
-5. Mostra la foto sul pannello destro della finestra OpenCV
+L'utente sceglie un set di foto di gatti — ognuna con una posa riconoscibile e divertente (lingua fuori, zampe alzate, occhi sgranati, ecc.). Per ogni gatto, l'utente imita la posa davanti alla webcam e il sistema raccoglie i suoi landmark corporei come training data.
 
-Non c'è training — è **zero-shot retrieval**. L'utente può aggiungere/rimuovere foto da `assets/cats/` e il sistema si aggiorna automaticamente al prossimo avvio (o premendo `i` per re-indicizzare a runtime).
+A runtime, MediaPipe rileva i landmark → un classificatore addestrato predice quale gatto stai imitando → compare la foto di quel gatto.
+
+**Nessun CLIP, nessun retrieval generico.** Il modello impara esattamente *come si muovono i tuoi landmark* quando imiti ciascun gatto. È personale, preciso, e molto più divertente.
+
+---
+
+## Flusso Completo
+
+```
+1. Prepara le foto → assets/cats/<label>.jpg  (es. tongue_cat.jpg, grumpy_cat.jpg)
+2. Raccogli i campioni → python scripts/collect_samples.py
+   - mostra ogni foto a schermo
+   - l'utente fa la posa
+   - premi SPAZIO per campionare N frame di landmark
+   - ripeti per ogni gatto
+3. Addestra il classificatore → python scripts/train_classifier.py
+   - legge data/samples.csv
+   - addestra SVM (default) o MLP
+   - salva in models/classifier.pkl + models/label_encoder.pkl
+   - stampa accuracy su validation set
+4. Esegui il programma → python main.py
+   - MediaPipe rileva landmark in real-time
+   - il classificatore predice il label
+   - compare la foto del gatto corrispondente
+```
 
 ---
 
 ## Repository Structure
 
 ```
-catpose-clip/
+catpose-classifier/
 ├── .claude/
-│   ├── CLAUDE.md          ← questo file (mai committato)
-│   └── settings.json      ← {"dangerouslySkipPermissions": true}
-├── .venv/                 ← virtual environment (mai committato)
+│   ├── CLAUDE.md              ← questo file (mai committato)
+│   └── settings.json          ← {"dangerouslySkipPermissions": true}
+├── .venv/                     ← virtual environment (mai committato)
 ├── assets/
-│   └── cats/              ← l'utente inserisce qui le sue foto di gatti (JPG/PNG)
-│       └── .gitkeep       ← cartella tracciata ma vuota nel repo
+│   └── cats/                  ← l'utente mette qui le sue foto di gatti
+│       └── .gitkeep           ← cartella tracciata ma vuota nel repo
+├── data/
+│   ├── samples.csv            ← landmark campionati (gitignored)
+│   └── .gitkeep
+├── models/
+│   ├── classifier.pkl         ← modello addestrato (gitignored)
+│   ├── label_encoder.pkl      ← encoder label (gitignored)
+│   └── .gitkeep
+├── screenshots/
+│   └── .gitkeep
 ├── src/
+│   ├── __init__.py
 │   ├── pose/
 │   │   ├── __init__.py
-│   │   ├── detector.py    ← MediaPipe wrapper, ritorna 33 landmark
-│   │   └── describer.py   ← converte landmark → stringa testuale per CLIP
-│   ├── clip_index/
+│   │   └── detector.py        ← MediaPipe wrapper, ritorna 33 landmark
+│   ├── classifier/
 │   │   ├── __init__.py
-│   │   ├── indexer.py     ← carica foto da assets/cats/, calcola embedding, salva index
-│   │   └── retriever.py   ← dato un query embedding, ritorna la foto più simile
-│   ├── display/
-│   │   ├── __init__.py
-│   │   └── renderer.py    ← OpenCV dual-panel: webcam sx, gatto dx
-│   └── utils/
+│   │   ├── features.py        ← landmark → feature vector normalizzato
+│   │   ├── trainer.py         ← addestra SVM/MLP, salva modello
+│   │   └── predictor.py       ← carica modello, predice label + confidence
+│   └── display/
 │       ├── __init__.py
-│       └── logger.py      ← structured logging
-├── configs/
-│   └── config.yaml        ← tutti i parametri configurabili
+│       └── renderer.py        ← OpenCV dual-panel: webcam sx, gatto dx
 ├── scripts/
-│   └── build_index.py     ← script standalone per (ri)costruire l'index CLIP
-├── main.py                ← entry point
+│   ├── collect_samples.py     ← UI per raccogliere training data
+│   └── train_classifier.py   ← entry point training
+├── configs/
+│   └── config.yaml            ← tutti i parametri configurabili
+├── main.py                    ← entry point real-time
 ├── requirements.txt
 ├── README.md
 ├── TECHNICAL_CHOICES.md
@@ -79,15 +105,15 @@ catpose-clip/
 
 ## Environment Setup
 
-### ALWAYS do this first
+### SEMPRE fare questo prima
 ```bash
-cd catpose-clip
+cd catpose-classifier
 
 python -m venv .venv
 
-# Activate (Linux/macOS)
+# Attiva (Linux/macOS)
 source .venv/bin/activate
-# Activate (Windows)
+# Attiva (Windows)
 # .venv\Scripts\activate
 
 # Verifica che python punti al venv
@@ -104,82 +130,100 @@ pip install -r requirements.txt
 ## Technical Strategy
 
 ### Pose Detection
-**MediaPipe Pose** (mediapipe >= 0.10). 33 landmark, x/y/z normalizzati + visibility. Usa solo landmark con `visibility > 0.5`.
+**MediaPipe Pose Tasks API** (mediapipe >= 0.10). 33 landmark, x/y/z normalizzati + visibility. Usa `RunningMode.IMAGE` per frame-by-frame processing sincrono.
 
-Landmark chiave:
+Landmark chiave usati per le feature:
 | Index | Nome |
 |-------|------|
 | 0 | NOSE |
 | 11 | LEFT_SHOULDER |
 | 12 | RIGHT_SHOULDER |
+| 13 | LEFT_ELBOW |
+| 14 | RIGHT_ELBOW |
 | 15 | LEFT_WRIST |
 | 16 | RIGHT_WRIST |
 | 23 | LEFT_HIP |
 | 24 | RIGHT_HIP |
+| 25 | LEFT_KNEE |
+| 26 | RIGHT_KNEE |
 
-### Pose → Testo (describer.py)
+### Feature Engineering (features.py)
 
-Converti i landmark in una stringa leggibile da CLIP. Usa regole geometriche semplici per scegliere la descrizione più accurata. Esempi:
+I landmark grezzi (x, y, z, visibility) non sono direttamente comparabili tra frame diversi perché dipendono dalla posizione dell'utente nello spazio. Vanno normalizzati:
 
-```python
-POSE_DESCRIPTIONS = {
-    "arms_up":      "a person with both arms raised above the head, excited",
-    "arms_wide":    "a person with arms stretched wide open to the sides",
-    "thinking":     "a person touching their face with one hand, thinking",
-    "slouching":    "a person slouching forward with drooping shoulders, tired",
-    "crossed_arms": "a person with arms crossed on the chest, grumpy",
-    "hands_on_hips":"a person with hands on hips, confident and sassy",
-    "neutral":      "a person standing normally, calm and relaxed",
-}
-```
+1. **Filtra** solo landmark con `visibility > threshold`
+2. **Centra** rispetto al centro dei fianchi (punto di riferimento stabile)
+3. **Scala** dividendo per la distanza shoulder-to-shoulder (invariante alla distanza dalla camera)
+4. **Concatena** x, y, z dei landmark filtrati → vettore float32
 
-La regola di classificazione geometrica rimane semplice (come nel progetto originale) — serve solo per scegliere quale stringa mandare a CLIP, non deve essere perfetta perché CLIP gestisce la vaghezza semantica.
+Il vettore risultante è invariante a traslazione e scala — dipende solo dalla *forma* della posa.
 
-### CLIP Embedding Index
+**Dimensione feature vector**: 33 landmark × 3 coordinate = 99 feature (padding con 0 per landmark non visibili).
 
-Usa **openai/clip-vit-base-patch32** via `transformers` (HuggingFace). Non serve PyTorch GPU.
+### Classifier (trainer.py)
 
-**Build index** (fatto una volta, poi cached):
-1. Carica tutte le immagini da `assets/cats/`
-2. Per ognuna, calcola l'embedding CLIP immagine → vettore float32 di dim 512
-3. Normalizza L2
-4. Salva in `clip_index/embeddings.npy` e `clip_index/filenames.json`
+**Default: SVM con kernel RBF** via scikit-learn.
+- Robusto con pochi sample (20-50 per classe)
+- Nessun iperparametro critico da tunare
+- `predict_proba` disponibile via `probability=True` → confidence score
 
-**Retrieval** (real-time, ogni frame o ogni N frame):
-1. Prendi la descrizione testuale della posa corrente
-2. Calcola embedding CLIP del testo → vettore float32 dim 512, normalizzato L2
-3. Cosine similarity = dot product (perché già normalizzati)
-4. Ritorna il filename con similarity più alta
+**Alternativa: MLP** (MLPClassifier) se l'utente ha >100 sample per classe.
+- Selezionabile via config: `classifier.model: "svm"` o `"mlp"`
 
-**Performance**: l'embedding del testo su CPU è ~5-10ms. Nessun impatto sull'FPS.
+**Training split**: 80% train / 20% validation, stratificato per classe.
+Stampa classification report completo (precision, recall, F1 per classe).
 
-### Display Layout (OpenCV)
-- **Pannello sinistro**: feed webcam con skeleton MediaPipe + label posa corrente + similarity score
-- **Pannello destro**: foto del gatto più simile, resizata mantenendo aspect ratio
-- **Debug overlay** (tasto `d`): mostra top-3 match con similarity score
+### Smoothing a runtime
 
-### Caching
-- Il testo embedding viene ricalcolato solo quando cambia la posa (non ogni frame)
-- La foto risultante viene mantenuta finché la posa non cambia o non si preme `r`
-- L'index viene costruito una volta e caricato da file ad ogni avvio
+Sliding window di N frame (default: 7). La predizione stabile è la moda della window. Cambia foto solo quando il label stabile cambia — evita flickering.
+
+### Confidence threshold
+
+Se la confidence massima è sotto `classifier.confidence_threshold` (default: 0.4), mostra "?" invece di una foto — l'utente non sta imitando nessun gatto riconoscibile.
+
+### Display Layout (renderer.py)
+- **Pannello sinistro**: feed webcam con skeleton MediaPipe + label predetto + confidence score + FPS
+- **Pannello destro**: foto del gatto predetto, resizata mantenendo aspect ratio
+- **Debug overlay** (tasto `d`): mostra top-3 predizioni con confidence
 
 ---
 
-## Workflow — Segui Questo Ordine
+## Script: collect_samples.py
 
-1. **Setup** — crea venv, installa requirements
-2. **Crea struttura** — tutte le cartelle e file elencati in "Files to Create"
-3. **Implementa detector.py** — MediaPipe wrapper
-4. **Implementa describer.py** — regole geometriche → stringa testuale
-5. **Implementa indexer.py** — carica foto, calcola embedding CLIP, salva index
-6. **Implementa retriever.py** — cosine similarity, ritorna path foto
-7. **Implementa renderer.py** — dual-panel OpenCV
-8. **Implementa main.py** — wiring completo
-9. **Implementa scripts/build_index.py** — script standalone per build index
-10. **Smoke test** — con 2-3 foto di placeholder in `assets/cats/`, verifica che il pipeline giri
-11. **Commit e push** — `git add -A && git commit -m "feat: initial working pipeline" && git push`
+UI interattiva per raccogliere training data. Flusso:
 
-> ⚠️ La cartella `assets/cats/` deve essere creata e tracciata con `.gitkeep` ma VUOTA — l'utente la riempirà con le sue foto. Non aggiungere foto placeholder nel repo.
+1. Legge tutte le foto da `assets/cats/` — ogni filename (senza estensione) è il label
+2. Per ogni foto, in ordine:
+   - Mostra la foto del gatto sul pannello destro in grande
+   - Mostra il feed webcam sul pannello sinistro con skeleton
+   - Stampa a schermo: `"Imita questo gatto! Premi SPAZIO per campionare, N per skippare"`
+   - Quando l'utente preme SPAZIO: campiona `data_collection.samples_per_pose` frame consecutivi
+   - Ogni frame: estrai landmark → feature vector → scrivi riga in `data/samples.csv`
+   - Mostra contatore: "Campionati X/Y frame"
+3. Alla fine: stampa riepilogo (quanti sample per classe) e suggerisce di lanciare train
+
+> ⚠️ Se `assets/cats/` è vuota, stampa istruzioni chiare e termina senza crash.
+> ⚠️ Se un frame non ha landmark visibili, skippalo silenziosamente (non contare come sample).
+
+Formato `data/samples.csv`:
+```
+label,f0,f1,...,f98
+tongue_cat,0.12,-0.34,...
+grumpy_cat,-0.05,0.78,...
+```
+
+---
+
+## Script: train_classifier.py
+
+1. Legge `data/samples.csv`
+2. Separa feature (f0..f98) da label
+3. Encode label con `LabelEncoder`
+4. Split stratificato 80/20
+5. Addestra il modello scelto in config (`svm` o `mlp`)
+6. Stampa classification report su validation set
+7. Salva `models/classifier.pkl` e `models/label_encoder.pkl`
+8. Se validation accuracy < 0.7, stampa warning: "Accuracy bassa — raccogli più campioni o controlla le pose"
 
 ---
 
@@ -194,29 +238,37 @@ camera:
 
 pose:
   visibility_threshold: 0.5
-  smoothing_window: 5        # frame di smoothing per evitare flickering del label
+  model_path: null  # null = scarica automaticamente MediaPipe
 
-clip:
-  model_name: "openai/clip-vit-base-patch32"
-  index_dir: "clip_index"    # dove salvare embeddings.npy e filenames.json
-  cats_dir: "assets/cats"    # dove l'utente mette le sue foto
-  top_k: 3                   # quante foto mostrare in debug mode
+classifier:
+  model: "svm"             # "svm" o "mlp"
+  confidence_threshold: 0.4
+  smoothing_window: 7      # frame per il majority vote
+  svm:
+    C: 10.0
+    kernel: "rbf"
+    gamma: "scale"
+    probability: true
+  mlp:
+    hidden_layer_sizes: [128, 64]
+    max_iter: 1000
+    random_state: 42
+
+data_collection:
+  samples_per_pose: 30     # frame campionati per ogni posa
+  cats_dir: "assets/cats"
+  output_file: "data/samples.csv"
 
 display:
-  window_title: "CatPose CLIP"
+  window_title: "CatPose"
   cat_panel_width: 480
   debug_mode: false
   font_scale: 1.0
-  similarity_threshold: 0.15  # sotto questa soglia mostra "no match" invece di una foto
 
-pose_descriptions:
-  arms_up:       "a person with both arms raised above the head, excited"
-  arms_wide:     "a person with arms stretched wide open to the sides"
-  thinking:      "a person touching their face with one hand, thinking"
-  slouching:     "a person slouching forward with drooping shoulders, tired"
-  crossed_arms:  "a person with arms crossed on the chest, grumpy"
-  hands_on_hips: "a person with hands on hips, confident and sassy"
-  neutral:       "a person standing normally, calm and relaxed"
+paths:
+  classifier: "models/classifier.pkl"
+  label_encoder: "models/label_encoder.pkl"
+  screenshots: "screenshots"
 ```
 
 ---
@@ -226,10 +278,59 @@ pose_descriptions:
 | Tasto | Azione |
 |-------|--------|
 | `q` | Quit |
-| `d` | Toggle debug overlay (mostra top-3 match con score) |
-| `r` | Forza re-retrieval (ignora cache) |
-| `i` | Re-indicizza `assets/cats/` a runtime (utile dopo aver aggiunto foto) |
+| `d` | Toggle debug overlay (top-3 predizioni con confidence) |
+| `r` | Reset smoothing window (utile se la predizione è bloccata) |
 | `s` | Salva screenshot in `screenshots/` |
+
+---
+
+## Workflow — Segui Questo Ordine
+
+1. **Setup** — crea venv, installa requirements
+2. **Crea struttura** — tutte le cartelle e file elencati in "Files to Create"
+3. **Implementa `src/pose/detector.py`** — MediaPipe Tasks API wrapper
+4. **Implementa `src/classifier/features.py`** — normalizzazione landmark → feature vector
+5. **Implementa `src/classifier/trainer.py`** — train SVM/MLP, salva modello
+6. **Implementa `src/classifier/predictor.py`** — carica modello, predice label + confidence
+7. **Implementa `src/display/renderer.py`** — dual-panel OpenCV
+8. **Implementa `scripts/collect_samples.py`** — UI raccolta dati
+9. **Implementa `scripts/train_classifier.py`** — entry point training
+10. **Implementa `main.py`** — wiring completo
+11. **Smoke test** — verifica che collect_samples.py e main.py si avviano senza errori
+12. **Scrivi README.md e TECHNICAL_CHOICES.md**
+13. **Commit e push** — `git add -A && git commit -m "feat: initial working pipeline" && git push`
+
+> ⚠️ La cartella `assets/cats/` deve essere tracciata con `.gitkeep` ma VUOTA nel repo.
+> ⚠️ `data/samples.csv` e `models/*.pkl` sono gitignored — non committarli mai.
+
+---
+
+## Files to Create
+
+Claude Code deve creare TUTTI i seguenti file prima di considerare il setup completo:
+
+- [ ] `requirements.txt` — mediapipe, opencv-python, scikit-learn, Pillow, PyYAML, numpy, ruff
+- [ ] `configs/config.yaml` — come sopra
+- [ ] `assets/cats/.gitkeep`
+- [ ] `data/.gitkeep`
+- [ ] `models/.gitkeep`
+- [ ] `screenshots/.gitkeep`
+- [ ] `src/__init__.py`
+- [ ] `src/pose/__init__.py`
+- [ ] `src/pose/detector.py`
+- [ ] `src/classifier/__init__.py`
+- [ ] `src/classifier/features.py`
+- [ ] `src/classifier/trainer.py`
+- [ ] `src/classifier/predictor.py`
+- [ ] `src/display/__init__.py`
+- [ ] `src/display/renderer.py`
+- [ ] `scripts/collect_samples.py`
+- [ ] `scripts/train_classifier.py`
+- [ ] `main.py`
+- [ ] `README.md`
+- [ ] `TECHNICAL_CHOICES.md`
+- [ ] `Makefile`
+- [ ] `.gitignore`
 
 ---
 
@@ -241,60 +342,11 @@ pose_descriptions:
 - **Zero valori hardcoded** — tutto in `configs/config.yaml`
 - **Un file, una responsabilità** — no monoliti da 500 righe
 - **Requirements** — ogni dipendenza pinnata con versione esatta
-- **Graceful error handling** — se `assets/cats/` è vuota, mostra un messaggio chiaro e continua senza crash
+- **Graceful error handling**:
+  - `assets/cats/` vuota → stampa istruzioni, termina con exit code 1
+  - `models/classifier.pkl` assente → stampa istruzioni per il training, termina con exit code 1
+  - frame senza landmark → skippa silenziosamente, non crashare
 - **Nessuno stato globale** — passa config esplicitamente
-
----
-
-## Git Conventions
-
-- Branch: `main`
-- Commit dopo ogni step significativo: `feat: ...` | `fix: ...` | `docs: ...`
-- Push finale dopo il setup completo
-- Mai committare: `.venv/`, `.claude/`, `clip_index/embeddings.npy`, `clip_index/filenames.json`, foto in `assets/cats/`
-
-### .gitignore deve includere:
-```
-.venv/
-.claude/
-__pycache__/
-*.pyc
-.env
-clip_index/embeddings.npy
-clip_index/filenames.json
-assets/cats/*
-!assets/cats/.gitkeep
-screenshots/
-```
-
----
-
-## Files to Create
-
-Claude Code deve creare TUTTI i seguenti file prima di considerare il setup completo:
-
-- [ ] `requirements.txt` — mediapipe, opencv-python, transformers, torch (cpu), Pillow, PyYAML, numpy, ruff
-- [ ] `configs/config.yaml` — come sopra
-- [ ] `assets/cats/.gitkeep` — cartella vuota tracciata
-- [ ] `clip_index/.gitkeep` — cartella vuota per l'index
-- [ ] `screenshots/.gitkeep`
-- [ ] `src/__init__.py`
-- [ ] `src/pose/__init__.py`
-- [ ] `src/pose/detector.py` — MediaPipe wrapper
-- [ ] `src/pose/describer.py` — landmark → stringa testuale
-- [ ] `src/clip_index/__init__.py`
-- [ ] `src/clip_index/indexer.py` — build e salva embedding index
-- [ ] `src/clip_index/retriever.py` — cosine similarity retrieval
-- [ ] `src/display/__init__.py`
-- [ ] `src/display/renderer.py` — OpenCV dual-panel
-- [ ] `src/utils/__init__.py`
-- [ ] `src/utils/logger.py` — logging setup
-- [ ] `scripts/build_index.py` — standalone script per (ri)costruire index
-- [ ] `main.py` — entry point, wiring completo
-- [ ] `README.md`
-- [ ] `TECHNICAL_CHOICES.md`
-- [ ] `Makefile`
-- [ ] `.gitignore`
 
 ---
 
@@ -302,24 +354,48 @@ Claude Code deve creare TUTTI i seguenti file prima di considerare il setup comp
 
 Dopo aver scritto tutti i file, Claude Code deve verificare:
 
-- [ ] `python scripts/build_index.py` gira senza errori (anche con cartella vuota — deve stampare un warning chiaro)
-- [ ] `python main.py` si avvia e apre la webcam
-- [ ] Con almeno 1 foto in `assets/cats/`, il retrieval funziona e mostra la foto
-- [ ] Cambiando posa, la foto cambia
-- [ ] Se `assets/cats/` è vuota, il programma non crasha — mostra un messaggio e il solo feed webcam
+- [ ] `python scripts/collect_samples.py` si avvia e mostra UI corretta
+- [ ] Con almeno 2 classi e 10 sample ciascuna, `python scripts/train_classifier.py` completa senza errori
+- [ ] `python main.py` apre la webcam e classifica in real-time
+- [ ] Se `assets/cats/` è vuota, il programma stampa istruzioni chiare e termina senza crash
+- [ ] Se `models/classifier.pkl` è assente, `main.py` stampa istruzioni e termina senza crash
 - [ ] Tutti i valori letti da `configs/config.yaml`, nessuno hardcoded
 - [ ] Tutte le funzioni hanno type hints e docstring
 - [ ] Nessun import error (tutti i package in requirements.txt)
-- [ ] I tasti `q`, `d`, `r`, `i`, `s` funzionano
-- [ ] FPS ≥ 15 su CPU (misura con `cv2.getTickFrequency()`)
+- [ ] I tasti `q`, `d`, `r`, `s` funzionano in `main.py`
+- [ ] FPS ≥ 15 su CPU
+- [ ] `data/samples.csv` e `models/*.pkl` sono in `.gitignore`
 - [ ] `git log` mostra commit per ogni step significativo
 - [ ] `git push` completato con successo
 
 ---
 
+## Response Style
+
+- No preamble, no recap, no conferme verbali
+- Esegui direttamente — non chiedere "sei sicuro?" o "vuoi che proceda?"
+- Commit dopo ogni file o gruppo di file correlati
+- Push alla fine del setup completo
+- Se qualcosa è ambiguo, fai una scelta ragionevole e documentala in un commento
+
+---
+
+## Note per il README
+
+Il README deve essere descrittivo e personale, non solo professionale. Deve spiegare:
+- **Cosa fa** il progetto e perché è divertente
+- **Come funziona** la logica (raccolta dati → training → real-time)
+- **Come si usa** passo per passo, con esempi concreti di pose da imitare
+- **Cosa succede** a runtime (cosa vedi sullo schermo)
+- Le scelte tecniche principali in linguaggio accessibile
+- Setup e istruzioni che funzionano davvero
+
+---
+
 ## Future Extensions (non implementare ora)
 
-- **ML classifier personalizzato**: raccogliere pose sample con `scripts/collect_pose_data.py` e addestrare SVM/MLP per migliorare la classificazione geometrica
-- **Top-K display**: mostrare le top-3 foto più simili in una griglia invece di una sola
-- **Similarity heatmap**: visualizzare quanto ogni foto si avvicina alla posa corrente
-- **Aggiornamento index live**: watch sulla cartella `assets/cats/` con watchdog per re-indicizzare automaticamente quando si aggiungono foto
+- **collect_samples.py con augmentation**: flip orizzontale automatico dei landmark per raddoppiare i sample
+- **Confidence heatmap**: visualizzare quanto ogni gatto è "vicino" alla posa corrente
+- **Hot-reload**: aggiungere nuovi gatti senza riavviare (watchdog su `assets/cats/`)
+- **Export pose**: salvare le pose catturate come GIF o video clip
+- **Leaderboard**: tracciare quante volte riesci a imitare correttamente ogni gatto in una sessione
