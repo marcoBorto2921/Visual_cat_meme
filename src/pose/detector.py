@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import urllib.request
+from pathlib import Path
+
 import numpy as np
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
@@ -10,6 +13,12 @@ from mediapipe.tasks.python import vision as mp_vision
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
+)
+MODEL_PATH = Path("models/pose_landmarker_full.task")
 
 # Key landmark indices
 LANDMARK_INDICES = {
@@ -23,6 +32,20 @@ LANDMARK_INDICES = {
 }
 
 
+def _ensure_model() -> str:
+    """Download the PoseLandmarker model file if not already present.
+
+    Returns:
+        Absolute path to the model file.
+    """
+    if not MODEL_PATH.exists():
+        MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        logger.info("Downloading PoseLandmarker model to %s ...", MODEL_PATH)
+        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+        logger.info("Model downloaded.")
+    return str(MODEL_PATH)
+
+
 class PoseDetector:
     """Wraps MediaPipe Pose Tasks API for real-time landmark detection.
 
@@ -32,8 +55,10 @@ class PoseDetector:
 
     def __init__(self, visibility_threshold: float = 0.5) -> None:
         self.visibility_threshold = visibility_threshold
+        model_path = _ensure_model()
         base_options = mp_python.BaseOptions(
-            delegate=mp_python.BaseOptions.Delegate.CPU
+            model_asset_path=model_path,
+            delegate=mp_python.BaseOptions.Delegate.CPU,
         )
         options = mp_vision.PoseLandmarkerOptions(
             base_options=base_options,

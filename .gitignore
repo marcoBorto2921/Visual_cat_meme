@@ -8,3 +8,4 @@ clip_index/filenames.json
 assets/cats/*
 !assets/cats/.gitkeep
 screenshots/
+models/
