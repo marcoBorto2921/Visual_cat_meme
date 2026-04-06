@@ -166,14 +166,14 @@ class Renderer:
         return self._cat_cache[label]
 
     def _advance_bubble_animation(self, new_label: str | None) -> None:
-        """Update pop-in scale; reset to 0 when the label changes.
+        """Grow bubble scale to 1.0 on first appearance; track label for content.
+
+        The bubble never shrinks back — only the image inside changes.
 
         Args:
             new_label: The label that will be displayed this frame.
         """
-        if new_label != self._current_label:
-            self._current_label = new_label
-            self._bubble_scale = 0.0
+        self._current_label = new_label
         if self._bubble_scale < 1.0:
             self._bubble_scale = min(1.0, self._bubble_scale + _SCALE_STEP)
 
@@ -230,11 +230,7 @@ class Renderer:
         inner_w = sz - 2 * pad
         inner_h = sz - 2 * pad
 
-        show_cat = (
-            label is not None
-            and confidence >= self.confidence_threshold
-            and self._bubble_scale >= 1.0  # only show image after animation ends
-        )
+        show_cat = label is not None and confidence >= self.confidence_threshold
 
         if show_cat:
             cat_bgr = self._load_cat_bgr(label)  # type: ignore[arg-type]
@@ -256,10 +252,10 @@ class Renderer:
                     (80, 80, 80), 1, cv2.LINE_AA,
                 )
         else:
-            # No recognised pose or still animating — draw "?"
+            # No recognised pose — draw "?"
             q_font = cv2.FONT_HERSHEY_SIMPLEX
-            q_scale = 2.5 * self.font_scale * self._bubble_scale
-            q_thick = max(1, int(3 * self._bubble_scale))
+            q_scale = 2.5 * self.font_scale
+            q_thick = 3
             (tw, th), _ = cv2.getTextSize("?", q_font, q_scale, q_thick)
             tx = inner_x + (inner_w - tw) // 2
             ty = inner_y + (inner_h + th) // 2
