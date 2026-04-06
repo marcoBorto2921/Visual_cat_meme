@@ -6,6 +6,7 @@ __pycache__/
 data/samples.csv
 data/*.csv
 models/*.pkl
+models/*.task
 assets/cats/*
 !assets/cats/.gitkeep
 screenshots/
