@@ -30,10 +30,13 @@ class FaceResult:
         landmarks: List of 478 NormalizedLandmark objects (.x, .y, .z in [0,1]).
         blendshapes: List of Category objects (.category_name, .score in [0,1]).
             52 ARKit blendshape scores including tongueOut, jawOpen, etc.
+        transform_matrix: Row-major 4x4 face-to-camera transformation matrix
+            as a flat list of 16 floats, or None if unavailable.
     """
 
     landmarks: list
     blendshapes: list
+    transform_matrix: list | None
 
 
 def _ensure_model() -> str:
@@ -75,7 +78,7 @@ class FaceDetector:
             min_face_presence_confidence=0.5,
             min_tracking_confidence=0.5,
             output_face_blendshapes=True,
-            output_facial_transformation_matrixes=False,
+            output_facial_transformation_matrixes=True,
         )
         self._landmarker = mp_vision.FaceLandmarker.create_from_options(options)
         logger.info("FaceDetector initialized (Tasks API, CPU, blendshapes=True)")
@@ -96,9 +99,13 @@ class FaceDetector:
         result = self._landmarker.detect(rgb)
         if not result.face_landmarks:
             return None
+        matrix: list | None = None
+        if result.facial_transformation_matrixes:
+            matrix = list(result.facial_transformation_matrixes[0].data)
         return FaceResult(
             landmarks=list(result.face_landmarks[0]),
             blendshapes=list(result.face_blendshapes[0]) if result.face_blendshapes else [],
+            transform_matrix=matrix,
         )
 
     def close(self) -> None:
