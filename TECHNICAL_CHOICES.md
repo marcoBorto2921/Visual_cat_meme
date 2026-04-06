@@ -11,19 +11,23 @@ The detector returns all 33 normalized landmarks (x, y, z, visibility). Filterin
 Instead of zero-shot retrieval via CLIP, we train a supervised classifier directly on the user's own pose landmarks. This has several advantages:
 
 - **Personalized**: the model learns how *your specific body* moves when imitating each cat pose — not a generic text-image similarity.
-- **Fast**: SVM inference on a 99-dim vector is microseconds on CPU, vs. ~10ms for a CLIP text embedding.
+- **Fast**: SVM inference on a 104-dim vector is microseconds on CPU.
 - **No large model downloads**: no `torch`, no `transformers`, no multi-GB weights. scikit-learn only.
 - **Accurate with few samples**: SVM with RBF kernel is robust with 20–50 samples per class.
 
-## Feature Engineering — Normalized Landmark Vector
+## Feature Engineering — Normalized Landmark Vector (104-dim)
 
-Raw landmark coordinates depend on where the user stands relative to the camera (translation and scale). We normalize them:
+The full feature vector is the concatenation of pose features (99-dim) and face features (5-dim).
+
+**Pose features (99-dim)**: Raw landmark coordinates depend on where the user stands relative to the camera. We normalize them:
 
 1. **Center** on the hip midpoint (stable reference point).
 2. **Scale** by the shoulder-to-shoulder distance (invariant to camera distance).
 3. **Zero-pad** invisible landmarks (visibility below threshold).
 
-Result: a 99-dimensional float32 vector (33 landmarks × x, y, z) that represents the *shape* of the pose, not its absolute position.
+Result: a 99-dimensional float32 vector (33 landmarks × x, y, z) representing the *shape* of the pose, not its absolute position.
+
+**Face features (5-dim)**: See "Face Feature Augmentation" below.
 
 ## Classifier Choice — SVM with RBF Kernel (default)
 
@@ -49,16 +53,26 @@ SVM inference: < 1 ms on CPU. MediaPipe landmark detection: ~10–20 ms on CPU. 
 
 ## Decision: Face Feature Augmentation
 
-**Choice**: MediaPipe FaceLandmarker (478 landmark) in parallelo a PoseLandmarker.
+**Choice**: MediaPipe FaceLandmarker (478 landmarks + ARKit blendshapes) running in parallel with PoseLandmarker.
 
-**Rationale**: PoseLandmarker tratta il volto come punto singolo (landmark 0 = naso). Non distingue bocca aperta, lingua fuori, o orientamento della testa. FaceLandmarker aggiunge 5 feature scalari — `mouth_open_ratio`, `lower_lip_drop`, `head_pitch`, `head_yaw`, `head_roll` — che rendono queste pose discriminabili dall'SVM senza aumentare la complessità del classificatore.
+**Rationale**: PoseLandmarker treats the face as a single point (landmark 0 = nose). It cannot distinguish open mouth, tongue out, or head orientation. FaceLandmarker adds 5 scalar features that make these poses separable by the SVM:
 
-**Alternatives considered**: MediaPipe Holistic (deprecato in 0.10+, non disponibile con Tasks API). CLIP text-image similarity (nessun controllo sulla granularità, overhead computazionale, richiede torch).
+| Index | Feature | Source | Description |
+|-------|---------|--------|-------------|
+| 0 | `jaw_open` | blendshape | jawOpen score [0,1] — how wide the jaw is dropped |
+| 1 | `tongue_out` | blendshape | tongueOut score [0,1] — direct tongue detection |
+| 2 | `head_yaw` | landmarks | horizontal head rotation, normalized to [-1, 1] |
+| 3 | `head_pitch` | landmarks | vertical tilt, normalized to [-1, 1] |
+| 4 | `head_roll` | landmarks | lateral tilt, normalized angle in [-0.5, 0.5] |
+
+Using blendshape scores for `jaw_open` and `tongue_out` rather than geometric approximations (lip distances) is significantly more reliable. The FaceLandmarker model is internally trained to detect these states; hand-crafted geometry is sensitive to face angle, lighting, and individual anatomy.
+
+**Alternatives considered**: MediaPipe Holistic (deprecated in 0.10+, not available with Tasks API). CLIP text-image similarity (no control over feature granularity, requires torch, ~10ms per frame overhead).
 
 ## Decision: Feature Vector Dimensionality (99 → 104)
 
-**Choice**: Concatenazione diretta di pose features (99-dim) e face features (5-dim).
+**Choice**: Direct concatenation of pose features (99-dim) and face features (5-dim).
 
-**Rationale**: Le 5 feature facciali sono già normalizzate e in scala comparabile al vettore pose (valori ~0–1). La concatenazione diretta funziona bene con SVM RBF senza riscalatura aggiuntiva perché `StandardScaler` è applicato prima del fit — scala uniformemente tutte le 104 dimensioni.
+**Rationale**: All 5 face features are already in a comparable scale to the pose vector (~0–1 range). Direct concatenation works well with SVM RBF because `StandardScaler` is applied before fitting — it scales all 104 dimensions uniformly, so no manual re-weighting is needed.
 
-**Alternatives considered**: Feature fusion learnable (richiede MLP obbligatorio, non compatibile con SVM default). PCA per ridurre dimensionalità (non necessario a 104-dim, overhead senza beneficio con dataset piccoli).
+**Alternatives considered**: Learnable feature fusion (requires MLP, incompatible with the default SVM). PCA dimensionality reduction (unnecessary overhead at 104-dim with small datasets).

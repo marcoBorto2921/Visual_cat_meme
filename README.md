@@ -1,19 +1,19 @@
 # CatPose
 
-Real-time webcam pose classification → mostra la foto del gatto che stai imitando.
+Real-time webcam pose classifier — imitate a cat and see its photo appear on screen.
 
-Scegli un set di foto di gatti con pose divertenti, imita le pose davanti alla webcam, e il sistema impara a riconoscerti in tempo reale.
+Pick a set of cat photos with fun, recognizable poses. For each one, strike the pose in front of your webcam. The system learns your specific landmark patterns and classifies your pose in real time.
 
-## Come funziona
+## How it works
 
-1. **Scegli le foto** — metti in `assets/cats/` una foto per ogni posa che vuoi imitare. Il nome del file è il label della classe (es. `tongue_cat.jpg`, `grumpy_cat.jpg`).
-2. **Raccogli il training data** — per ogni gatto, imiti la posa davanti alla webcam e premi SPAZIO per campionare i tuoi landmark corporei.
-3. **Addestra il classificatore** — un SVM impara esattamente come si muovono i tuoi landmark quando imiti ciascun gatto.
-4. **Gioca** — in real-time, MediaPipe rileva i tuoi landmark → il classificatore predice quale gatto stai imitando → compare la foto.
+1. **Pick the photos** — drop one image per pose into `assets/cats/`. The filename (without extension) becomes the class label (e.g. `tongue_cat.jpg`, `grumpy_cat.jpg`).
+2. **Collect training data** — for each cat, hold the pose in front of the webcam and press SPACE to capture landmark frames.
+3. **Train the classifier** — an SVM learns exactly how your body and face landmarks move when you imitate each cat.
+4. **Play** — MediaPipe detects your landmarks in real time → the classifier predicts which cat you're imitating → that cat's photo appears.
 
-Il sistema rileva in parallelo **landmark corporei** (posizione di braccia, spalle, fianchi) e **landmark facciali** (apertura della bocca, lingua fuori, orientamento della testa). Le due fonti vengono combinate in un unico vettore feature prima della classificazione — questo rende distinguibili pose come "lingua fuori" che bodypose da sola non distinguerebbe.
+The system detects **body landmarks** (arms, shoulders, hips) and **face landmarks** (mouth openness, tongue out, head orientation) in parallel. Both are combined into a single feature vector before classification — this makes poses like "tongue out" distinguishable from a normal face, which body pose alone cannot do.
 
-**Nessun CLIP, nessun modello generico.** Il sistema impara le *tue* pose specifiche — è personale e molto più preciso.
+**No CLIP, no generic model.** The system learns *your* specific poses — it's personal and much more accurate.
 
 ## Setup
 
@@ -27,9 +27,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Utilizzo
+## Usage
 
-### 1. Prepara le foto dei gatti
+### 1. Add cat photos
 
 ```
 assets/cats/tongue_cat.jpg
@@ -37,29 +37,31 @@ assets/cats/grumpy_cat.jpg
 assets/cats/surprised_cat.jpg
 ```
 
-Usa pose ben distinguibili tra loro: braccia alzate, braccia incrociate, mano sul viso, ecc.
+Pick poses that are visually distinct from each other: arms raised, arms crossed, hand on face, tongue out, head tilted, etc.
 
-### 2. Raccogli i campioni
+### 2. Collect samples
 
 ```bash
 python scripts/collect_samples.py
 ```
 
-Per ogni gatto:
-- La foto appare sul pannello destro
-- Imita la posa davanti alla webcam
-- Premi **SPAZIO** per campionare 30 frame di landmark
-- Premi **N** per passare al gatto successivo
+On first run, MediaPipe models are downloaded automatically (~30 MB each). For each cat:
+- The photo appears on the right panel
+- Mirror your webcam feed is on the left with the skeleton overlay
+- Hold the pose and press **SPACE** to capture 30 landmark frames
+- Press **N** to skip to the next cat
 
-### 3. Addestra il classificatore
+> For "tongue out" poses: face the webcam directly, make sure your face is well-lit and not backlit. MediaPipe's face model struggles with extreme angles or strong backlighting.
+
+### 3. Train the classifier
 
 ```bash
 python scripts/train_classifier.py
 ```
 
-Stampa accuracy e classification report. Se l'accuracy è bassa (< 70%), raccogli più campioni.
+Prints accuracy and a full classification report. If accuracy is below 70%, collect more samples or make your poses more exaggerated.
 
-### 4. Avvia
+### 4. Run
 
 ```bash
 python main.py
@@ -67,33 +69,31 @@ python main.py
 
 ## Keyboard shortcuts
 
-| Tasto | Azione |
-|-------|--------|
+| Key | Action |
+|-----|--------|
 | `q` | Quit |
-| `d` | Toggle debug overlay (top-3 predizioni con confidence) |
+| `d` | Toggle debug overlay (top-3 predictions with confidence scores) |
 | `r` | Reset smoothing window |
-| `s` | Salva screenshot in `screenshots/` |
+| `s` | Save screenshot to `screenshots/` |
 
-## Configurazione
+## Configuration
 
-Tutti i parametri in `configs/config.yaml`: indice webcam, soglia confidence, numero sample per posa, modello (svm/mlp), ecc.
+All parameters live in `configs/config.yaml`: camera index, confidence threshold, samples per pose, classifier model (svm/mlp), and more.
 
-Il blocco `face:` controlla il rilevamento facciale:
-- `face.enabled: true/false` — abilita o disabilita completamente i landmark facciali. Disabilita se la webcam non inquadra bene il viso o se vuoi classificare solo dalla postura corporea.
-- `face.model_path: null` — scarica automaticamente il modello FaceLandmarker di MediaPipe.
-- `face.visibility_threshold` — soglia sotto la quale i landmark facciali vengono ignorati.
+The `face:` block controls face landmark detection:
+- `face.enabled: true/false` — enable or disable face features entirely. Disable if your webcam doesn't frame your face well or if you only want body-based classification.
+- `face.model_path: null` — downloads the FaceLandmarker model automatically.
+- `face.visibility_threshold` — landmarks below this threshold are ignored.
 
-> **Nota pratica**: se vuoi classificare "lingua fuori", scegli una posa dove la bocca è ben visibile alla webcam — frontale, illuminata, non in controluce. MediaPipe FaceLandmarker fatica con angoli estremi o controluce forte.
-
-## Struttura
+## Project structure
 
 ```
-assets/cats/        ← le tue foto di gatti (una per classe)
-data/samples.csv    ← landmark campionati (gitignored)
+assets/cats/        ← your cat photos (one per class)
+data/samples.csv    ← captured landmark frames (gitignored)
 models/             ← classifier.pkl, label_encoder.pkl (gitignored)
 src/pose/           ← MediaPipe PoseLandmarker wrapper
-src/face/           ← MediaPipe FaceLandmarker wrapper + estrazione feature facciali
-src/classifier/     ← feature extraction, training, inference
+src/face/           ← MediaPipe FaceLandmarker wrapper + face feature extraction
+src/classifier/     ← feature engineering, training, inference
 src/display/        ← OpenCV dual-panel renderer
 scripts/            ← collect_samples.py, train_classifier.py
 ```
