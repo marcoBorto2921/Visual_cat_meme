@@ -46,3 +46,19 @@ If the classifier's max probability is below `confidence_threshold` (default: 0.
 ## No GPU Required
 
 SVM inference: < 1 ms on CPU. MediaPipe landmark detection: ~10–20 ms on CPU. Total pipeline easily achieves > 15 FPS on any modern laptop.
+
+## Decision: Face Feature Augmentation
+
+**Choice**: MediaPipe FaceLandmarker (478 landmark) in parallelo a PoseLandmarker.
+
+**Rationale**: PoseLandmarker tratta il volto come punto singolo (landmark 0 = naso). Non distingue bocca aperta, lingua fuori, o orientamento della testa. FaceLandmarker aggiunge 5 feature scalari — `mouth_open_ratio`, `lower_lip_drop`, `head_pitch`, `head_yaw`, `head_roll` — che rendono queste pose discriminabili dall'SVM senza aumentare la complessità del classificatore.
+
+**Alternatives considered**: MediaPipe Holistic (deprecato in 0.10+, non disponibile con Tasks API). CLIP text-image similarity (nessun controllo sulla granularità, overhead computazionale, richiede torch).
+
+## Decision: Feature Vector Dimensionality (99 → 104)
+
+**Choice**: Concatenazione diretta di pose features (99-dim) e face features (5-dim).
+
+**Rationale**: Le 5 feature facciali sono già normalizzate e in scala comparabile al vettore pose (valori ~0–1). La concatenazione diretta funziona bene con SVM RBF senza riscalatura aggiuntiva perché `StandardScaler` è applicato prima del fit — scala uniformemente tutte le 104 dimensioni.
+
+**Alternatives considered**: Feature fusion learnable (richiede MLP obbligatorio, non compatibile con SVM default). PCA per ridurre dimensionalità (non necessario a 104-dim, overhead senza beneficio con dataset piccoli).

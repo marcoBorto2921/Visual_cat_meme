@@ -79,10 +79,14 @@ catpose-classifier/
 │   ├── __init__.py
 │   ├── pose/
 │   │   ├── __init__.py
-│   │   └── detector.py        ← MediaPipe wrapper, ritorna 33 landmark
+│   │   └── detector.py        ← MediaPipe PoseLandmarker wrapper, ritorna 33 landmark
+│   ├── face/
+│   │   ├── __init__.py
+│   │   ├── detector.py        ← MediaPipe FaceLandmarker wrapper, ritorna 478 landmark
+│   │   └── features.py        ← face landmark → 5 feature scalari normalizzate
 │   ├── classifier/
 │   │   ├── __init__.py
-│   │   ├── features.py        ← landmark → feature vector normalizzato
+│   │   ├── features.py        ← landmark → feature vector normalizzato (99 pose + 5 face = 104)
 │   │   ├── trainer.py         ← addestra SVM/MLP, salva modello
 │   │   └── predictor.py       ← carica modello, predice label + confidence
 │   └── display/
@@ -147,6 +151,20 @@ Landmark chiave usati per le feature:
 | 25 | LEFT_KNEE |
 | 26 | RIGHT_KNEE |
 
+### Face Detection
+**MediaPipe Face Tasks API** (`FaceLandmarker`, mediapipe >= 0.10). 478 landmark facciali, x/y normalizzati. Usa `RunningMode.IMAGE` sincrono, in parallelo a PoseLandmarker.
+
+Da questi vengono estratte 5 feature scalari normalizzate (`src/face/features.py`):
+| Feature | Descrizione |
+|---------|-------------|
+| `mouth_open_ratio` | Distanza verticale labbra / larghezza bocca |
+| `lower_lip_drop` | Discesa del labbro inferiore (proxy "lingua fuori") |
+| `head_pitch` | Inclinazione testa avanti/indietro |
+| `head_yaw` | Rotazione testa sinistra/destra |
+| `head_roll` | Inclinazione laterale della testa |
+
+Se `face.enabled: false` in config, queste 5 feature sono sostituite da zero-padding — il vettore rimane 104-dim.
+
 ### Feature Engineering (features.py)
 
 I landmark grezzi (x, y, z, visibility) non sono direttamente comparabili tra frame diversi perché dipendono dalla posizione dell'utente nello spazio. Vanno normalizzati:
@@ -158,7 +176,7 @@ I landmark grezzi (x, y, z, visibility) non sono direttamente comparabili tra fr
 
 Il vettore risultante è invariante a traslazione e scala — dipende solo dalla *forma* della posa.
 
-**Dimensione feature vector**: 33 landmark × 3 coordinate = 99 feature (padding con 0 per landmark non visibili).
+**Dimensione feature vector**: 99 feature pose (33 landmark × 3 coordinate) + 5 feature facciali = **104 feature totali** (padding con 0 per landmark non visibili o face detection disabilitata).
 
 ### Classifier (trainer.py)
 
@@ -207,17 +225,18 @@ UI interattiva per raccogliere training data. Flusso:
 
 Formato `data/samples.csv`:
 ```
-label,f0,f1,...,f98
+label,f0,f1,...,f103
 tongue_cat,0.12,-0.34,...
 grumpy_cat,-0.05,0.78,...
 ```
+(f0–f98 = pose features, f99–f103 = face features)
 
 ---
 
 ## Script: train_classifier.py
 
 1. Legge `data/samples.csv`
-2. Separa feature (f0..f98) da label
+2. Separa feature (f0..f103) da label
 3. Encode label con `LabelEncoder`
 4. Split stratificato 80/20
 5. Addestra il modello scelto in config (`svm` o `mlp`)
@@ -239,6 +258,11 @@ camera:
 pose:
   visibility_threshold: 0.5
   model_path: null  # null = scarica automaticamente MediaPipe
+
+face:
+  enabled: true              # false = disabilita face features (vettore resta 104-dim con zero-padding)
+  model_path: null           # null = scarica automaticamente FaceLandmarker
+  visibility_threshold: 0.5
 
 classifier:
   model: "svm"             # "svm" o "mlp"
@@ -318,6 +342,9 @@ Claude Code deve creare TUTTI i seguenti file prima di considerare il setup comp
 - [ ] `src/__init__.py`
 - [ ] `src/pose/__init__.py`
 - [ ] `src/pose/detector.py`
+- [ ] `src/face/__init__.py`
+- [ ] `src/face/detector.py`
+- [ ] `src/face/features.py`
 - [ ] `src/classifier/__init__.py`
 - [ ] `src/classifier/features.py`
 - [ ] `src/classifier/trainer.py`

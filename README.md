@@ -11,6 +11,8 @@ Scegli un set di foto di gatti con pose divertenti, imita le pose davanti alla w
 3. **Addestra il classificatore** — un SVM impara esattamente come si muovono i tuoi landmark quando imiti ciascun gatto.
 4. **Gioca** — in real-time, MediaPipe rileva i tuoi landmark → il classificatore predice quale gatto stai imitando → compare la foto.
 
+Il sistema rileva in parallelo **landmark corporei** (posizione di braccia, spalle, fianchi) e **landmark facciali** (apertura della bocca, lingua fuori, orientamento della testa). Le due fonti vengono combinate in un unico vettore feature prima della classificazione — questo rende distinguibili pose come "lingua fuori" che bodypose da sola non distinguerebbe.
+
 **Nessun CLIP, nessun modello generico.** Il sistema impara le *tue* pose specifiche — è personale e molto più preciso.
 
 ## Setup
@@ -76,13 +78,21 @@ python main.py
 
 Tutti i parametri in `configs/config.yaml`: indice webcam, soglia confidence, numero sample per posa, modello (svm/mlp), ecc.
 
+Il blocco `face:` controlla il rilevamento facciale:
+- `face.enabled: true/false` — abilita o disabilita completamente i landmark facciali. Disabilita se la webcam non inquadra bene il viso o se vuoi classificare solo dalla postura corporea.
+- `face.model_path: null` — scarica automaticamente il modello FaceLandmarker di MediaPipe.
+- `face.visibility_threshold` — soglia sotto la quale i landmark facciali vengono ignorati.
+
+> **Nota pratica**: se vuoi classificare "lingua fuori", scegli una posa dove la bocca è ben visibile alla webcam — frontale, illuminata, non in controluce. MediaPipe FaceLandmarker fatica con angoli estremi o controluce forte.
+
 ## Struttura
 
 ```
 assets/cats/        ← le tue foto di gatti (una per classe)
 data/samples.csv    ← landmark campionati (gitignored)
 models/             ← classifier.pkl, label_encoder.pkl (gitignored)
-src/pose/           ← MediaPipe wrapper
+src/pose/           ← MediaPipe PoseLandmarker wrapper
+src/face/           ← MediaPipe FaceLandmarker wrapper + estrazione feature facciali
 src/classifier/     ← feature extraction, training, inference
 src/display/        ← OpenCV dual-panel renderer
 scripts/            ← collect_samples.py, train_classifier.py
