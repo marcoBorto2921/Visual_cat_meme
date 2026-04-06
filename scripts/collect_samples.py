@@ -25,6 +25,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.classifier.features import extract_features, FEATURE_DIM
+from src.face.detector import FaceDetector
 from src.pose.detector import PoseDetector
 from src.utils.logger import get_logger
 
@@ -170,6 +171,7 @@ def main() -> None:
     dc_cfg = config["data_collection"]
     disp_cfg = config["display"]
 
+    face_cfg = config.get("face", {"enabled": False})
     cats_dir = Path(dc_cfg["cats_dir"])
     output_file = Path(dc_cfg["output_file"])
     samples_per_pose: int = dc_cfg["samples_per_pose"]
@@ -181,6 +183,9 @@ def main() -> None:
     logger.info("Trovati %d gatti: %s", len(cat_images), [lbl for lbl, _ in cat_images])
 
     detector = PoseDetector(visibility_threshold=pose_cfg["visibility_threshold"])
+    face_detector: FaceDetector | None = None
+    if face_cfg.get("enabled", False):
+        face_detector = FaceDetector(model_path=face_cfg.get("model_path"))
 
     cap = cv2.VideoCapture(cam_cfg["index"])
     if not cap.isOpened():
@@ -224,9 +229,10 @@ def main() -> None:
 
                 if sampling:
                     landmarks = detector.detect(frame)
+                    face_landmarks = face_detector.detect(frame) if face_detector else None
                     if landmarks:
                         features = extract_features(
-                            landmarks, pose_cfg["visibility_threshold"]
+                            landmarks, pose_cfg["visibility_threshold"], face_landmarks
                         )
                         row = {"label": label}
                         row.update({f"f{i}": float(features[i]) for i in range(FEATURE_DIM)})
@@ -265,6 +271,8 @@ def main() -> None:
         csv_file.close()
         cap.release()
         detector.close()
+        if face_detector:
+            face_detector.close()
         cv2.destroyAllWindows()
 
     _print_summary(counts, output_file)

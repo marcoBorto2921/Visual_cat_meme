@@ -8,6 +8,11 @@ pose:
   visibility_threshold: 0.5
   model_path: null  # null = scarica automaticamente MediaPipe
 
+face:
+  enabled: true              # false = disabilita face features (ultimi 5 dim saranno zero)
+  model_path: null           # null = scarica automaticamente FaceLandmarker
+  visibility_threshold: 0.5
+
 classifier:
   model: "svm"             # "svm" o "mlp"
   confidence_threshold: 0.4

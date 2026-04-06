@@ -21,6 +21,7 @@ import yaml
 from src.classifier.features import extract_features
 from src.classifier.predictor import Predictor
 from src.display.renderer import Renderer
+from src.face.detector import FaceDetector
 from src.pose.detector import PoseDetector
 from src.utils.logger import get_logger
 
@@ -45,12 +46,16 @@ def main() -> None:
     config = load_config()
     cam_cfg = config["camera"]
     pose_cfg = config["pose"]
+    face_cfg = config.get("face", {"enabled": False})
     clf_cfg = config["classifier"]
     disp_cfg = config["display"]
     paths_cfg = config["paths"]
 
-    # --- Init detector ---
+    # --- Init detectors ---
     detector = PoseDetector(visibility_threshold=pose_cfg["visibility_threshold"])
+    face_detector: FaceDetector | None = None
+    if face_cfg.get("enabled", False):
+        face_detector = FaceDetector(model_path=face_cfg.get("model_path"))
 
     # --- Init predictor (exits with instructions if model missing) ---
     try:
@@ -114,10 +119,13 @@ def main() -> None:
         prev_time = now
         fps = sum(fps_counter) / len(fps_counter)
 
-        # Pose detection + feature extraction
+        # Pose + face detection → feature extraction
         landmarks = detector.detect(frame)
+        face_landmarks = face_detector.detect(frame) if face_detector else None
         if landmarks:
-            features = extract_features(landmarks, pose_cfg["visibility_threshold"])
+            features = extract_features(
+                landmarks, pose_cfg["visibility_threshold"], face_landmarks
+            )
             label, confidence, top3 = predictor.predict(features)
             smoothing.append(label)
             stable_label = max(set(smoothing), key=list(smoothing).count)
@@ -161,6 +169,8 @@ def main() -> None:
 
     cap.release()
     detector.close()
+    if face_detector:
+        face_detector.close()
     renderer.destroy()
     logger.info("Bye!")
 
