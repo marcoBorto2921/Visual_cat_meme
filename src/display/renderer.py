@@ -325,21 +325,6 @@ class Renderer:
             (200, 200, 200), 1, cv2.LINE_AA,
         )
 
-        # Label + confidence — bottom-left
-        label_text = pose_label if pose_label else "?"
-        cv2.putText(
-            out, f"Pose: {label_text}",
-            (10, h - 40),
-            cv2.FONT_HERSHEY_SIMPLEX, self.font_scale,
-            (0, 255, 0), 2, cv2.LINE_AA,
-        )
-        cv2.putText(
-            out, f"Conf: {confidence:.2f}",
-            (10, h - 12),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.75 * self.font_scale,
-            (255, 255, 0), 2, cv2.LINE_AA,
-        )
-
         if self.debug_mode:
             cv2.putText(
                 out, "[DEBUG]",
