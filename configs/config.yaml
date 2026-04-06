@@ -28,7 +28,7 @@ classifier:
     random_state: 42
 
 data_collection:
-  samples_per_pose: 30     # frame campionati per ogni posa
+  samples_per_pose: 50     # frame campionati per ogni posa
   cats_dir: "assets/cats"
   output_file: "data/samples.csv"
 

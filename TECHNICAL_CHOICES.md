@@ -13,7 +13,7 @@ Instead of zero-shot retrieval via CLIP, we train a supervised classifier direct
 - **Personalized**: the model learns how *your specific body* moves when imitating each cat pose — not a generic text-image similarity.
 - **Fast**: SVM inference on a 104-dim vector is microseconds on CPU.
 - **No large model downloads**: no `torch`, no `transformers`, no multi-GB weights. scikit-learn only.
-- **Accurate with few samples**: SVM with RBF kernel is robust with 20–50 samples per class.
+- **Accurate with few samples**: SVM with RBF kernel is robust with 50+ samples per class.
 
 ## Feature Engineering — Normalized Landmark Vector (104-dim)
 
@@ -61,13 +61,15 @@ SVM inference: < 1 ms on CPU. MediaPipe landmark detection: ~10–20 ms on CPU. 
 |-------|---------|--------|-------------|
 | 0 | `jaw_open` | blendshape | jawOpen score [0,1] — how wide the jaw is dropped |
 | 1 | `tongue_out` | blendshape | tongueOut score [0,1] — direct tongue detection |
-| 2 | `head_yaw` | landmarks | horizontal head rotation, normalized to [-1, 1] |
-| 3 | `head_pitch` | landmarks | vertical tilt, normalized to [-1, 1] |
-| 4 | `head_roll` | landmarks | lateral tilt, normalized angle in [-0.5, 0.5] |
+| 2 | `head_yaw` | transform matrix | horizontal rotation, euler angle normalized to [-1, 1] |
+| 3 | `head_pitch` | transform matrix | vertical tilt, euler angle normalized to [-1, 1] |
+| 4 | `head_roll` | transform matrix | lateral tilt, euler angle normalized to [-1, 1] |
 
 Using blendshape scores for `jaw_open` and `tongue_out` rather than geometric approximations (lip distances) is significantly more reliable. The FaceLandmarker model is internally trained to detect these states; hand-crafted geometry is sensitive to face angle, lighting, and individual anatomy.
 
-**Alternatives considered**: MediaPipe Holistic (deprecated in 0.10+, not available with Tasks API). CLIP text-image similarity (no control over feature granularity, requires torch, ~10ms per frame overhead).
+Head orientation (yaw, pitch, roll) is derived from the **4×4 facial transformation matrix** returned by FaceLandmarker (`output_facial_transformation_matrixes=True`). This gives true euler angles via ZYX decomposition of the rotation submatrix, which is far more accurate than estimating pitch from nose-to-eye distance ratios — the geometric approach fails to distinguish subtle tilts like "head slightly up" from "head level". Each angle is clipped and normalized to [-1, 1] using ±60° as the practical range.
+
+**Alternatives considered**: MediaPipe Holistic (deprecated in 0.10+, not available with Tasks API). CLIP text-image similarity (no control over feature granularity, requires torch, ~10ms per frame overhead). Geometric landmark ratios for head orientation (tried, insufficient accuracy for subtle pitch differences).
 
 ## Decision: Feature Vector Dimensionality (99 → 104)
 

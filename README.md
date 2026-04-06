@@ -48,7 +48,7 @@ python scripts/collect_samples.py
 On first run, MediaPipe models are downloaded automatically (~30 MB each). For each cat:
 - The photo appears on the right panel
 - Mirror your webcam feed is on the left with the skeleton overlay
-- Hold the pose and press **SPACE** to capture 30 landmark frames
+- Hold the pose and press **SPACE** to capture 50 landmark frames
 - Press **N** to skip to the next cat
 
 > For "tongue out" poses: face the webcam directly, make sure your face is well-lit and not backlit. MediaPipe's face model struggles with extreme angles or strong backlighting.
