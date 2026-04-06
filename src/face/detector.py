@@ -1,8 +1,9 @@
-"""MediaPipe FaceLandmarker wrapper returning 478 normalized face landmarks."""
+"""MediaPipe FaceLandmarker wrapper returning 478 face landmarks + blendshapes."""
 
 from __future__ import annotations
 
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +20,20 @@ MODEL_URL = (
     "face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
 )
 MODEL_PATH = Path("models/face_landmarker.task")
+
+
+@dataclass
+class FaceResult:
+    """Result of a FaceDetector inference.
+
+    Attributes:
+        landmarks: List of 478 NormalizedLandmark objects (.x, .y, .z in [0,1]).
+        blendshapes: List of Category objects (.category_name, .score in [0,1]).
+            52 ARKit blendshape scores including tongueOut, jawOpen, etc.
+    """
+
+    landmarks: list
+    blendshapes: list
 
 
 def _ensure_model() -> str:
@@ -38,6 +53,9 @@ def _ensure_model() -> str:
 class FaceDetector:
     """Wraps MediaPipe Face Tasks API for real-time face landmark detection.
 
+    Returns landmarks and ARKit blendshapes (including tongueOut, jawOpen)
+    for accurate mouth and expression classification.
+
     Args:
         model_path: Path to the FaceLandmarker .task file. If None, the model
             is downloaded automatically to models/face_landmarker.task.
@@ -56,21 +74,20 @@ class FaceDetector:
             min_face_detection_confidence=0.5,
             min_face_presence_confidence=0.5,
             min_tracking_confidence=0.5,
-            output_face_blendshapes=False,
+            output_face_blendshapes=True,
             output_facial_transformation_matrixes=False,
         )
         self._landmarker = mp_vision.FaceLandmarker.create_from_options(options)
-        logger.info("FaceDetector initialized (Tasks API, CPU)")
+        logger.info("FaceDetector initialized (Tasks API, CPU, blendshapes=True)")
 
-    def detect(self, frame_bgr: np.ndarray) -> list | None:
-        """Detect face landmarks in a BGR frame.
+    def detect(self, frame_bgr: np.ndarray) -> FaceResult | None:
+        """Detect face landmarks and blendshapes in a BGR frame.
 
         Args:
             frame_bgr: BGR image from OpenCV.
 
         Returns:
-            List of 478 NormalizedLandmark objects, or None if no face found.
-            Each landmark has .x, .y, .z attributes (normalized to [0, 1]).
+            FaceResult with landmarks and blendshapes, or None if no face found.
         """
         rgb = mp.Image(
             image_format=mp.ImageFormat.SRGB,
@@ -79,7 +96,10 @@ class FaceDetector:
         result = self._landmarker.detect(rgb)
         if not result.face_landmarks:
             return None
-        return list(result.face_landmarks[0])
+        return FaceResult(
+            landmarks=list(result.face_landmarks[0]),
+            blendshapes=list(result.face_blendshapes[0]) if result.face_blendshapes else [],
+        )
 
     def close(self) -> None:
         """Release MediaPipe resources."""

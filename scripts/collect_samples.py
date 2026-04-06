@@ -229,10 +229,10 @@ def main() -> None:
 
                 if sampling:
                     landmarks = detector.detect(frame)
-                    face_landmarks = face_detector.detect(frame) if face_detector else None
+                    face_result = face_detector.detect(frame) if face_detector else None
                     if landmarks:
                         features = extract_features(
-                            landmarks, pose_cfg["visibility_threshold"], face_landmarks
+                            landmarks, pose_cfg["visibility_threshold"], face_result
                         )
                         row = {"label": label}
                         row.update({f"f{i}": float(features[i]) for i in range(FEATURE_DIM)})

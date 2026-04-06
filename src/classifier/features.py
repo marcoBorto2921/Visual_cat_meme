@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from src.face.detector import FaceResult
 from src.face.features import extract_face_features, FACE_FEATURE_DIM
 
 NUM_POSE_LANDMARKS = 33
@@ -28,7 +29,7 @@ RIGHT_SHOULDER_IDX = 12
 def extract_features(
     landmarks: list,
     visibility_threshold: float,
-    face_landmarks: list | None = None,
+    face_result: FaceResult | None = None,
 ) -> np.ndarray:
     """Extract a normalized feature vector from pose and optional face landmarks.
 
@@ -37,14 +38,14 @@ def extract_features(
     2. Scale by shoulder-to-shoulder distance (scale invariance).
     3. Zero-pad coordinates of landmarks below the visibility threshold.
 
-    Face features (5-dim) are appended after the pose features. If face_landmarks
+    Face features (5-dim) are appended after the pose features. If face_result
     is None, the last 5 dimensions are zero.
 
     Args:
         landmarks: List of 33 NormalizedLandmark objects from PoseDetector.
         visibility_threshold: Landmarks with visibility below this value are zeroed out.
-        face_landmarks: Optional list of 478 NormalizedLandmark objects from
-            FaceDetector. Pass None when face detection is disabled.
+        face_result: Optional FaceResult from FaceDetector.detect(). Pass None
+            when face detection is disabled.
 
     Returns:
         Float32 ndarray of shape (104,) — 99 pose features + 5 face features.
@@ -74,8 +75,8 @@ def extract_features(
     pose_features = pose_coords.flatten()
 
     # --- Face features (5-dim) ---
-    if face_landmarks is not None:
-        face_features = extract_face_features(face_landmarks)
+    if face_result is not None:
+        face_features = extract_face_features(face_result)
     else:
         face_features = np.zeros(FACE_FEATURE_DIM, dtype=np.float32)
 

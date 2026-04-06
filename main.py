@@ -121,10 +121,10 @@ def main() -> None:
 
         # Pose + face detection → feature extraction
         landmarks = detector.detect(frame)
-        face_landmarks = face_detector.detect(frame) if face_detector else None
+        face_result = face_detector.detect(frame) if face_detector else None
         if landmarks:
             features = extract_features(
-                landmarks, pose_cfg["visibility_threshold"], face_landmarks
+                landmarks, pose_cfg["visibility_threshold"], face_result
             )
             label, confidence, top3 = predictor.predict(features)
             smoothing.append(label)
