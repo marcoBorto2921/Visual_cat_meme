@@ -101,7 +101,7 @@ class FaceDetector:
             return None
         matrix: list | None = None
         if result.facial_transformation_matrixes:
-            matrix = list(result.facial_transformation_matrixes[0].data)
+            matrix = np.array(result.facial_transformation_matrixes[0]).flatten().tolist()
         return FaceResult(
             landmarks=list(result.face_landmarks[0]),
             blendshapes=list(result.face_blendshapes[0]) if result.face_blendshapes else [],
