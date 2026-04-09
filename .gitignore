@@ -10,3 +10,7 @@ models/*.task
 assets/cats/*
 !assets/cats/.gitkeep
 screenshots/
+.gitignore
+CLAUDE.md
+Makefile
+docs/
